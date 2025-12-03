@@ -1,17 +1,17 @@
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 @dataclass
 class FileDependencies:
     source_file: Path
-    file_dependencies: Optional[list[Path]] = []
+    file_dependencies: Optional[List[Path]]
     
 
 @dataclass
 class FileUsages:
     source_file: Path
-    file_usages: Optional[list[Path]] = []
+    file_usages: Optional[List[Path]]
 
 
 class Repository:
@@ -20,11 +20,11 @@ class Repository:
         self.repository_path = repository_path
 
         
-    def find_dependencies(file_path: Path) -> FileDependencies:
+    def find_dependencies(self, file_path: Path) -> FileDependencies:
         """Finds all file dependencies of the specified `file_path` in the repository"""
         pass
 
     
-    def find_usages(file_path: Path) -> FileUsages:
+    def find_usages(self, file_path: Path) -> FileUsages:
         """Finds all file usages of the specified `file_path` in the repository"""
         pass
