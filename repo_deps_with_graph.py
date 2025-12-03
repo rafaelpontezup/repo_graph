@@ -6,41 +6,125 @@ import os
 import ast
 import networkx as nx
 
+import os
+import networkx as nx
+from tree_sitter import Parser
+from tree_sitter import Language, Parser  # type: ignore
+import tree_sitter_python as tspython
+
+
 class RepoGraph:
     def __init__(self, root: str):
         self.root = os.path.abspath(root)
         self.graph = nx.DiGraph()
 
+        # Tree-sitter parser
+        LANGUAGE = Language(tspython.language())
+        self.parser = Parser(LANGUAGE)
+
+    # ------------------------------------------------------------
+    # Build graph
+    # ------------------------------------------------------------
     def build(self):
         for dirpath, _, files in os.walk(self.root):
             for f in files:
-                if f.endswith('.py'):
-                    full = os.path.join(dirpath, f)
-                    rel = os.path.relpath(full, self.root)
-                    self.graph.add_node(rel)
-                    with open(full) as fh:
-                        try:
-                            tree = ast.parse(fh.read())
-                        except Exception:
-                            continue
-                        for node in ast.walk(tree):
-                            if isinstance(node, ast.Import):
-                                for n in node.names:
-                                    self._add_edge(rel, n.name)
-                            elif isinstance(node, ast.ImportFrom):
-                                if node.module:
-                                    self._add_edge(rel, node.module)
+                if not f.endswith(".py"):
+                    continue
 
-    def _add_edge(self, src, mod):
-        tgt = mod.replace('.', os.sep) + '.py'
+                full = os.path.join(dirpath, f)
+                rel = os.path.relpath(full, self.root)
+
+                self.graph.add_node(rel)
+
+                code = self._read_file(full)
+                if code is None:
+                    continue
+
+                tree = self.parser.parse(code)
+                root_node = tree.root_node
+
+                for imp in self._extract_imports(root_node, code):
+                    self._add_edge(rel, imp)
+
+    # ------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------
+    def _read_file(self, full_path: str) -> bytes | None:
+        try:
+            return open(full_path, "rb").read()
+        except Exception:
+            return None
+
+    # ------------------------------------------------------------
+    # Import extraction using Tree-Sitter
+    # ------------------------------------------------------------
+    def _extract_imports(self, root_node, code: bytes):
+        """
+        Generator que retorna strings com caminhos tipo:
+            - "a.b.c"
+            - "module.sub"
+        """
+        def text(node):
+            return code[node.start_byte:node.end_byte].decode("utf8")
+
+        cursor = root_node.walk()
+        stack = [root_node]
+
+        while stack:
+            node = stack.pop()
+
+            # import module
+            if node.type == "import_statement":
+                # e.g. "import a", "import a.b.c"
+                for child in node.children:
+                    if child.type == "dotted_name":
+                        yield text(child)
+
+            # from a.b import x
+            elif node.type == "import_from_statement":
+                module_node = None
+
+                # A module pode estar em "dotted_name" ou "relative_import"
+                for child in node.children:
+                    if child.type in ("dotted_name", "relative_import"):
+                        module_node = child
+                        break
+
+                if module_node:
+                    module_name = text(module_node)
+                    # Limpar "from ..module" => "..module"
+                    module_name = module_name.lstrip(".")
+                    if module_name:
+                        yield module_name
+
+            # DFS
+            if hasattr(node, "children"):
+                stack.extend(node.children)
+
+    # ------------------------------------------------------------
+    # Graph edge creation
+    # ------------------------------------------------------------
+    def _add_edge(self, src: str, module: str):
+        """
+        Converte o nome de módulo em caminho de arquivo e cria aresta se existir.
+        """
+        # Transformar a.b.c → a/b/c.py
+        tgt = module.replace(".", os.sep) + ".py"
+
         if tgt in self.graph.nodes:
             self.graph.add_edge(src, tgt)
 
+    # ------------------------------------------------------------
+    # API pública
+    # ------------------------------------------------------------
     def dependencies_of(self, file: str):
+        """Arquivos nos quais 'file' depende."""
         return list(self.graph.successors(file))
 
     def usages_of(self, file: str):
+        """Arquivos que dependem de 'file'."""
         return list(self.graph.predecessors(file))
+
 
 
 @dataclass
@@ -133,19 +217,20 @@ if __name__ == "__main__":
     
     target = (Path(args.repo) / args.show).resolve()
     
-    print("ℹ️ Dependencies for:", target)
+    print(f"📝 {target}")
+    print("... | ℹ️ Dependencies for:", target)
     deps = repo.find_dependencies(target)
     if not deps.file_dependencies:
-        print("  ⚠️ No dependencies")
+        print("        |> ⚠️  No dependencies found")
     else:
         for p in deps.file_dependencies or []:
-            print("  ➡️", p)
+            print("        |> ➡️", p)
     
-    print("ℹ️ Usages (files that import it):")
+    print("... | ℹ️ Usages (files that import it):")
     uses = repo.find_usages(target)
     if not uses.file_usages:
-        print("  ⚠️ No usages")
+        print("        |> ⚠️  No usages found")
     else:        
         for p in uses.file_usages or []:
-            print("  ⬅️ ", p)
+            print("        |> ⬅️ ", p)
         
