@@ -206,31 +206,76 @@ class Repository:
 # -------------------------
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(prog="repo-deps", description="Build python file dependency graph from repository")
-    parser.add_argument("repo", help="path to repository root")
-    parser.add_argument("--show", help="show dependencies for a given file (relative to repo)", default=None, required=True)
+    from pathlib import Path
+
+    parser = argparse.ArgumentParser(
+        prog="repo-deps",
+        description="Build python file dependency graph from a repository"
+    )
+
+    parser.add_argument(
+        "repo",
+        help="Path to repository root",
+    )
+
+    parser.add_argument(
+        "--show-files",
+        help="File or directory (relative to repo) to show dependencies/usages for",
+        required=True,
+    )
+
     args = parser.parse_args()
 
-    repo = Repository(Path(args.repo))
-    if not args.show:
-        raise ValueError("❌ Argumento --show deve ser informado")
-    
-    target = (Path(args.repo) / args.show).resolve()
-    
-    print(f"📝 {target}")
-    print("... | ℹ️ Dependencies for:", target)
-    deps = repo.find_dependencies(target)
-    if not deps.file_dependencies:
-        print("        |> ⚠️  No dependencies found")
+    repo_root = Path(args.repo).resolve()
+    repo = Repository(repo_root)
+
+    # ------------------------------------------------------------
+    # Resolve alvo (arquivo ou diretório)
+    # ------------------------------------------------------------
+    target = (repo_root / args.show_files).resolve()
+
+    if not target.exists():
+        raise ValueError(f"❌ Path not found: {target}")
+
+    # Coletar arquivos a analisar
+    files_to_show = []
+
+    if target.is_file() and target.suffix == ".py":
+        files_to_show.append(target)
+
+    elif target.is_dir():
+        for p in target.rglob("*.py"):
+            files_to_show.append(p)
+
     else:
-        for p in deps.file_dependencies or []:
-            print("        |> ➡️", p)
-    
-    print("... | ℹ️ Usages (files that import it):")
-    uses = repo.find_usages(target)
-    if not uses.file_usages:
-        print("        |> ⚠️  No usages found")
-    else:        
-        for p in uses.file_usages or []:
-            print("        |> ⬅️ ", p)
-        
+        raise ValueError("❌ --show-files deve ser um arquivo .py ou um diretório contendo .py")
+
+    # ------------------------------------------------------------
+    # Execução
+    # ------------------------------------------------------------
+    print(f"🗂️ Repository: {repo_root}")
+    print(f"📂 Target file or directory: {target}")
+    print(f"📄 Total of found files: {len(files_to_show)}")
+    print("-" * 60)
+
+    for file in sorted(files_to_show):
+        print(f"\n📝 {file.relative_to(repo_root)}")
+        print("... | ℹ️ Dependencies:")
+        deps = repo.find_dependencies(file)
+
+        if not deps.file_dependencies:
+            print("        ⚠️  No dependencies found")
+        else:
+            for p in deps.file_dependencies:
+                print("        ✔", p.relative_to(repo_root))
+
+        print("... | ℹ️ Usages (files that import it):")
+        uses = repo.find_usages(file)
+
+        if not uses.file_usages:
+            print("        ⚠️  No usages found")
+        else:
+            for p in uses.file_usages:
+                print("        ✔", p.relative_to(repo_root))
+
+    print("\n✔ Finished.")
