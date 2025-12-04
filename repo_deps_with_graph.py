@@ -8,8 +8,7 @@ import networkx as nx
 
 import os
 import networkx as nx
-from tree_sitter import Parser
-from tree_sitter import Language, Parser  # type: ignore
+from tree_sitter import Language, Parser, Query, QueryCursor  # type: ignore
 import tree_sitter_python as tspython
 
 
@@ -18,15 +17,23 @@ class RepoGraph:
         self.root = os.path.abspath(root)
         self.graph = nx.DiGraph()
 
+        print(f"[DEBUG] RepoGraph root = {self.root}")
         # Tree-sitter parser
-        LANGUAGE = Language(tspython.language())
-        self.parser = Parser(LANGUAGE)
+        self.language= Language(tspython.language())
+        self.parser = Parser(self.language)
 
     # ------------------------------------------------------------
     # Build graph
     # ------------------------------------------------------------
     def build(self):
-        for dirpath, _, files in os.walk(self.root):
+        print("\n[DEBUG] === Building graph ===")
+
+        for dirpath, dirnames, files in os.walk(self.root):
+            # Ignores dev directories
+            dirnames[:] = [
+                d for d in dirnames 
+                if d not in {".venv", "venv", "env", "libs", "__pycache__"}
+            ]
             for f in files:
                 if not f.endswith(".py"):
                     continue
@@ -34,16 +41,21 @@ class RepoGraph:
                 full = os.path.join(dirpath, f)
                 rel = os.path.relpath(full, self.root)
 
+                print(f"\n[DEBUG] Parsing file: {rel}")
+
                 self.graph.add_node(rel)
 
                 code = self._read_file(full)
                 if code is None:
+                    print("[DEBUG]   Could not read file")
                     continue
 
                 tree = self.parser.parse(code)
                 root_node = tree.root_node
 
+                print("[DEBUG]   Extracting imports...")
                 for imp in self._extract_imports(root_node, code):
+                    print(f"[DEBUG]     Found import: '{imp}'")
                     self._add_edge(rel, imp)
 
     # ------------------------------------------------------------
@@ -52,67 +64,130 @@ class RepoGraph:
     def _read_file(self, full_path: str) -> bytes | None:
         try:
             return open(full_path, "rb").read()
-        except Exception:
+        except Exception as e:
+            print(f"[DEBUG] Failed to read {full_path}: {e}")
             return None
 
     # ------------------------------------------------------------
     # Import extraction using Tree-Sitter
     # ------------------------------------------------------------
+    # def _extract_imports(self, root_node, code: bytes):
+    #     """
+    #     Generator que retorna strings com caminhos tipo:
+    #         - "a.b.c"
+    #         - "module.sub"
+    #     """
+    #     def text(node):
+    #         return code[node.start_byte:node.end_byte].decode("utf8")
+
+    #     cursor = root_node.walk()
+    #     stack = [root_node]
+
+    #     while stack:
+    #         node = stack.pop()
+
+    #         # import X
+    #         if node.type == "import_statement":
+    #             for child in node.children:
+    #                 if child.type == "dotted_name":
+    #                     yield text(child)
+
+    #         # from X import Y
+    #         elif node.type == "import_from_statement":
+    #             module_node = None
+
+    #             for child in node.children:
+    #                 if child.type in ("dotted_name", "relative_import"):
+    #                     module_node = child
+    #                     break
+
+    #             if module_node:
+    #                 module_name = text(module_node)
+    #                 cleaned = module_name.lstrip(".")
+    #                 yield cleaned
+
+    #         if hasattr(node, "children"):
+    #             stack.extend(node.children)
+    from tree_sitter import Query, QueryCursor
+
     def _extract_imports(self, root_node, code: bytes):
         """
-        Generator que retorna strings com caminhos tipo:
-            - "a.b.c"
-            - "module.sub"
+        Extrai imports usando QueryCursor moderno (API nova):
+        cursor = QueryCursor(query)
+        matches = cursor.matches(node)
         """
+
+        QUERY = b"""
+            ; -----------------------------
+            ; import x.y
+            ; import x.y as z
+            ; -----------------------------
+            (import_statement
+            [
+                (dotted_name)
+                (aliased_import
+                name: (dotted_name))
+            ] @import.module)
+
+            ; -----------------------------
+            ; from x.y import z
+            ; from .x.y import z
+            ; from .. import z
+            ; -----------------------------
+            (import_from_statement
+            [
+                (dotted_name)
+                (relative_import)
+            ] @import.module)
+        """
+
+        query = Query(self.language, QUERY)
+        cursor = QueryCursor(query)   # ← assinatura nova
+
         def text(node):
             return code[node.start_byte:node.end_byte].decode("utf8")
 
-        cursor = root_node.walk()
-        stack = [root_node]
+        # matches() retorna:  [(pattern_index, {capture_name: [nodes...]})]
+        for pattern_index, captures_dict in cursor.matches(root_node):
+            # Cada pattern encontrado pode ter vários nodes capturados
+            for capture_name, nodes in captures_dict.items():
+                if capture_name != "import.module":
+                    continue
 
-        while stack:
-            node = stack.pop()
+                for node in nodes:
+                    module = text(node).lstrip(".")
+                    if module:
+                        yield module
 
-            # import module
-            if node.type == "import_statement":
-                # e.g. "import a", "import a.b.c"
-                for child in node.children:
-                    if child.type == "dotted_name":
-                        yield text(child)
 
-            # from a.b import x
-            elif node.type == "import_from_statement":
-                module_node = None
-
-                # A module pode estar em "dotted_name" ou "relative_import"
-                for child in node.children:
-                    if child.type in ("dotted_name", "relative_import"):
-                        module_node = child
-                        break
-
-                if module_node:
-                    module_name = text(module_node)
-                    # Limpar "from ..module" => "..module"
-                    module_name = module_name.lstrip(".")
-                    if module_name:
-                        yield module_name
-
-            # DFS
-            if hasattr(node, "children"):
-                stack.extend(node.children)
 
     # ------------------------------------------------------------
     # Graph edge creation
     # ------------------------------------------------------------
-    def _add_edge(self, src: str, module: str):
-        """
-        Converte o nome de módulo em caminho de arquivo e cria aresta se existir.
-        """
-        # Transformar a.b.c → a/b/c.py
-        tgt = module.replace(".", os.sep) + ".py"
+    # def _add_edge(self, src: str, module: str):
+    #     print(f"[DEBUG]   Resolving import '{module}' from '{src}'")
 
-        if tgt in self.graph.nodes:
-            self.graph.add_edge(src, tgt)
+    #     tgt = module.replace(".", os.sep) + ".py"
+    #     print(f"[DEBUG]     Converted module to path: {tgt}")
+
+    #     if tgt in self.graph.nodes:
+    #         print(f"[DEBUG]     ✔ Edge created: {src} -> {tgt}")
+    #         self.graph.add_edge(src, tgt)
+    def _add_edge(self, src: str, module: str):
+        print(f"[DEBUG]     Resolving import '{module}' from '{src}'")
+        
+        tgt_rel = module.replace(".", os.sep) + ".py"
+
+        # Caminho absoluto do arquivo alvo
+        abs_tgt = os.path.join(self.root, tgt_rel)
+
+        # Se o arquivo realmente existe no repo, convertemos novamente para o formato de nó
+        if os.path.exists(abs_tgt):
+            final_rel = os.path.relpath(abs_tgt, self.root)
+            print(f"[DEBUG]       ✔ Edge created: {src} -> {final_rel}")
+            self.graph.add_edge(src, final_rel)
+        else:
+            print(f"[DEBUG]       ✖ Target not found in repo: {tgt_rel}")
 
     # ------------------------------------------------------------
     # API pública
@@ -162,6 +237,28 @@ class Repository:
         Converte caminho relativo usado no grafo (str) → Path absoluto.
         """
         return (self.repository_path / rel_path).resolve()
+
+
+    def list_files(self, base_dir: Optional[Path] = ".") -> List[Path]:
+        target_dir = (repo_root / base_dir).resolve()
+        if not target_dir.exists():
+            raise ValueError(f"❌ Path not found: {target_dir}")
+
+        # Coletar arquivos a analisar
+        found_files = []
+        if target_dir.is_file() and target_dir.suffix == ".py":
+            found_files.append(target_dir)
+        elif target_dir.is_dir():
+            IGNORED_DIRS = {".venv", "venv", "env", "libs", "__pycache__"}
+            for p in target_dir.rglob("*.py"):
+                if any(ignored in p.parts for ignored in IGNORED_DIRS):
+                    continue
+                found_files.append(p)
+        else:
+            raise ValueError("❌ base_dir must be a .py file or directory within the repository")
+        
+        return found_files
+
 
     # ------------------------------------------------------------
     # API pública
@@ -233,32 +330,21 @@ if __name__ == "__main__":
     # Resolve alvo (arquivo ou diretório)
     # ------------------------------------------------------------
     target = (repo_root / args.show_files).resolve()
-
     if not target.exists():
         raise ValueError(f"❌ Path not found: {target}")
 
     # Coletar arquivos a analisar
-    files_to_show = []
-
-    if target.is_file() and target.suffix == ".py":
-        files_to_show.append(target)
-
-    elif target.is_dir():
-        for p in target.rglob("*.py"):
-            files_to_show.append(p)
-
-    else:
-        raise ValueError("❌ --show-files deve ser um arquivo .py ou um diretório contendo .py")
+    filtered_files = repo.list_files(base_dir=args.show_files)
 
     # ------------------------------------------------------------
     # Execução
     # ------------------------------------------------------------
     print(f"🗂️ Repository: {repo_root}")
-    print(f"📂 Target file or directory: {target}")
-    print(f"📄 Total of found files: {len(files_to_show)}")
+    print(f"📂 Target file or directory: {args.show_files}")
+    print(f"📄 Total of found files: {len(filtered_files)}")
     print("-" * 60)
 
-    for file in sorted(files_to_show):
+    for file in sorted(filtered_files):
         print(f"\n📝 {file.relative_to(repo_root)}")
         print("... | ℹ️ Dependencies:")
         deps = repo.find_dependencies(file)
