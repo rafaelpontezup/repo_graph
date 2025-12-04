@@ -374,12 +374,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(prog="repo-deps", description="Build python file dependency graph from repository")
     parser.add_argument("repo", help="path to repository root")
     parser.add_argument("--python-lang-so", help="optional path to compiled tree-sitter python language .so/.dylib", default=None)
-    parser.add_argument("--show", help="show dependencies for a given file (relative to repo)", default=None)
+    parser.add_argument("--show-files", help="show dependencies for a given file (relative to repo)", default=None)
     args = parser.parse_args()
 
     repo = Repository(Path(args.repo), python_lang_so=Path(args.python_lang_so) if args.python_lang_so else None)
-    if args.show:
-        target = (Path(args.repo) / args.show).resolve()
+    if args.show_files:
+        target = (Path(args.repo) / args.show_files).resolve()
         deps = repo.find_dependencies(target)
         uses = repo.find_usages(target)
         print("Dependencies for:", target)
