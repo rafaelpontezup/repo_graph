@@ -71,43 +71,6 @@ class RepoGraph:
     # ------------------------------------------------------------
     # Import extraction using Tree-Sitter
     # ------------------------------------------------------------
-    # def _extract_imports(self, root_node, code: bytes):
-    #     """
-    #     Generator que retorna strings com caminhos tipo:
-    #         - "a.b.c"
-    #         - "module.sub"
-    #     """
-    #     def text(node):
-    #         return code[node.start_byte:node.end_byte].decode("utf8")
-
-    #     cursor = root_node.walk()
-    #     stack = [root_node]
-
-    #     while stack:
-    #         node = stack.pop()
-
-    #         # import X
-    #         if node.type == "import_statement":
-    #             for child in node.children:
-    #                 if child.type == "dotted_name":
-    #                     yield text(child)
-
-    #         # from X import Y
-    #         elif node.type == "import_from_statement":
-    #             module_node = None
-
-    #             for child in node.children:
-    #                 if child.type in ("dotted_name", "relative_import"):
-    #                     module_node = child
-    #                     break
-
-    #             if module_node:
-    #                 module_name = text(module_node)
-    #                 cleaned = module_name.lstrip(".")
-    #                 yield cleaned
-
-    #         if hasattr(node, "children"):
-    #             stack.extend(node.children)
     from tree_sitter import Query, QueryCursor
 
     def _extract_imports(self, root_node, code: bytes):
@@ -174,15 +137,6 @@ class RepoGraph:
     # ------------------------------------------------------------
     # Graph edge creation
     # ------------------------------------------------------------
-    # def _add_edge(self, src: str, module: str):
-    #     print(f"[DEBUG]   Resolving import '{module}' from '{src}'")
-
-    #     tgt = module.replace(".", os.sep) + ".py"
-    #     print(f"[DEBUG]     Converted module to path: {tgt}")
-
-    #     if tgt in self.graph.nodes:
-    #         print(f"[DEBUG]     ✔ Edge created: {src} -> {tgt}")
-    #         self.graph.add_edge(src, tgt)
     def _add_edge(self, src: str, module: str):
         print(f"[DEBUG]     Resolving import '{module}' from '{src}'")
         
