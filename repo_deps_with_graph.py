@@ -126,7 +126,7 @@ class RepoGraph:
             [
                 (dotted_name)
                 (aliased_import
-                name: (dotted_name))
+                    name: (dotted_name))
             ] @import.module)
 
             ; -----------------------------
@@ -137,8 +137,18 @@ class RepoGraph:
             (import_from_statement
             [
                 (dotted_name)
-                (relative_import)
+                (relative_import) 
             ] @import.module)
+            
+            ; -----------------------------
+            ; import x.y.z as alias
+            ; -----------------------------
+            (import_statement
+                (aliased_import
+                    name: (dotted_name) @import.module
+                    alias: (identifier) @import.alias
+                )+
+            )
         """
 
         query = Query(self.language, QUERY)
