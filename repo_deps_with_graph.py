@@ -128,7 +128,7 @@ class RepoGraph:
                     continue
 
                 for node in nodes:
-                    module = text(node).lstrip(".")
+                    module = text(node)
                     if module:
                         yield module
 
@@ -139,13 +139,27 @@ class RepoGraph:
     # ------------------------------------------------------------
     def _add_edge(self, src: str, module: str):
         print(f"[DEBUG]     Resolving import '{module}' from '{src}'")
-        
-        tgt_rel = module.replace(".", os.sep) + ".py"
 
-        # Caminho absoluto do arquivo alvo
+        src_dir = os.path.dirname(src)
+
+        # Handle relative imports (starting with '.')
+        tgt_rel = module.replace(".", os.sep) + ".py"
+        if module.startswith("."):
+            # Count how many leading dots
+            dots = len(module) - len(module.lstrip("."))
+            # Remove dots to extract the module tail
+            tail = module[dots:]
+            # Walk up directories according to the number of dots
+            base = src_dir
+            for _ in range(dots - 1):  # 1 dot → same directory
+                base = os.path.dirname(base)
+
+            # Build the final relative path
+            tgt_rel = os.path.join(base, tail.replace(".", os.sep)) + ".py"
+
+        # Absolute target path
         abs_tgt = os.path.join(self.root, tgt_rel)
 
-        # Se o arquivo realmente existe no repo, convertemos novamente para o formato de nó
         if os.path.exists(abs_tgt):
             final_rel = os.path.relpath(abs_tgt, self.root)
             print(f"[DEBUG]       ✔ Edge created: {src} -> {final_rel}")
