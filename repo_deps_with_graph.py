@@ -164,8 +164,21 @@ class RepoGraph:
             final_rel = os.path.relpath(abs_tgt, self.root)
             print(f"[DEBUG]       ✔ Edge created: {src} -> {final_rel}")
             self.graph.add_edge(src, final_rel)
-        else:
-            print(f"[DEBUG]       ✖ Target not found in repo: {tgt_rel}")
+            return
+        
+        # Module is a package (directory), not a file
+        dir_candidate = os.path.join(self.root, module.replace(".", os.sep))
+        if os.path.isdir(dir_candidate):
+            print(f"[DEBUG]       → Import refers to a package. Including all .py files inside: {dir_candidate}")
+            for f in os.listdir(dir_candidate):
+                if f.endswith(".py") and f != "__init__.py":
+                    abs_f = os.path.join(dir_candidate, f)
+                    final_rel = os.path.relpath(abs_f, self.root)
+                    print(f"[DEBUG]         ✔ Edge created: {src} -> {final_rel}")
+                    self.graph.add_edge(src, final_rel)
+            return
+        
+        print(f"[DEBUG]       ✖ Target not found in repo: {tgt_rel}")
 
     # ------------------------------------------------------------
     # API pública
