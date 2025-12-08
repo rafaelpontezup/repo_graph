@@ -160,45 +160,48 @@ class RepoGraph:
     def _add_edge(self, src: str, module: str):
         print(f"[DEBUG]     Resolving import '{module}' from '{src}'")
 
-        src_dir = os.path.dirname(src)
+        src_abs = os.path.join(self.root, src)
+        src_dir = os.path.dirname(src_abs)
 
-        # Handle relative imports (starting with '.')
-        tgt_rel = module.replace(".", os.sep) + ".py"
+        # Case 1 — Relative import (starts with ".")
         if module.startswith("."):
-            # Count how many leading dots
             dots = len(module) - len(module.lstrip("."))
-            # Remove dots to extract the module tail
-            tail = module[dots:]
-            # Walk up directories according to the number of dots
+            tail = module[dots:] # after the dots (may be empty)
+
+            # Start from file directory, then go up N-1 levels
             base = src_dir
-            for _ in range(dots - 1):  # 1 dot → same directory
+            for _ in range(dots - 1):
                 base = os.path.dirname(base)
 
-            # Build the final relative path
-            tgt_rel = os.path.join(base, tail.replace(".", os.sep)) + ".py"
+            # Build absolute target path
+            tgt_abs = os.path.join(base, tail.replace(".", os.sep) + ".py")
 
-        # Absolute target path
-        abs_tgt = os.path.join(self.root, tgt_rel)
-        
-        print(f"[DEBUG]       Relative file: {tgt_rel} ")
-        print(f"[DEBUG]       Absolute file: {abs_tgt} ")
+        else:
+            # Case 2 — Normal import "x.y.z"
+            tgt_abs = os.path.join(
+                self.root,
+                module.replace(".", os.sep) + ".py"
+            )
 
-        if os.path.exists(abs_tgt):
-            final_rel = os.path.relpath(abs_tgt, self.root)
+        print(f"[DEBUG]       Absolute candidate: {tgt_abs}")
+
+        # If file exists directly
+        if os.path.exists(tgt_abs):
+            final_rel = os.path.relpath(tgt_abs, self.root)
             if not self.graph.has_edge(src, final_rel):
                 print(f"[DEBUG]       ✔ Edge created: {src} -> {final_rel}")
                 self.graph.add_edge(src, final_rel)
             else:
                 print(f"[DEBUG]       ↷ Edge already exists: {src} -> {final_rel}")
             return
-        
-        # Module is a package (directory), not a file
-        dir_candidate = os.path.join(self.root, module.replace(".", os.sep))
-        if os.path.isdir(dir_candidate):
-            print(f"[DEBUG]       → Import refers to a package. Including all .py files inside: {dir_candidate}")
-            for f in os.listdir(dir_candidate):
+
+        # If target is a package directory
+        pkg_abs = tgt_abs[:-3]  # remove ".py"
+        if os.path.isdir(pkg_abs):
+            print(f"[DEBUG]       → Import refers to package: {pkg_abs}")
+            for f in os.listdir(pkg_abs):
                 if f.endswith(".py") and f != "__init__.py":
-                    abs_f = os.path.join(dir_candidate, f)
+                    abs_f = os.path.join(pkg_abs, f)
                     final_rel = os.path.relpath(abs_f, self.root)
                     if not self.graph.has_edge(src, final_rel):
                         print(f"[DEBUG]         ✔ Edge created: {src} -> {final_rel}")
@@ -206,8 +209,9 @@ class RepoGraph:
                     else:
                         print(f"[DEBUG]         ↷ Edge already exists: {src} -> {final_rel}")
             return
-        
-        print(f"[DEBUG]       ✖ Target not found in repo: {tgt_rel}")
+
+        print(f"[DEBUG]       ✖ Target not found: {tgt_abs}")
+
 
     # ------------------------------------------------------------
     # API pública
