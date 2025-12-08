@@ -80,7 +80,7 @@ class RepoGraph:
         matches = cursor.matches(node)
         """
 
-        QUERY = b"""
+        QUERY = """
             ; -----------------------------
             ; import x.y
             ; import x.y as z
@@ -96,12 +96,23 @@ class RepoGraph:
             ; from x.y import z
             ; from .x.y import z
             ; from .. import z
+            ; from .. import z1, z2, z3
+            ; from .. import z.t
+            ; from .. import z as k
+            ; from .. import (a, b, c)
             ; -----------------------------
             (import_from_statement
-            [
-                (dotted_name)
-                (relative_import) 
-            ] @import.module)
+                module_name: [
+                    (dotted_name)
+                    (relative_import)
+                ] @import.module)
+            
+            (import_from_statement
+                module_name: (dotted_name)? @import.module
+                name: [
+                    (dotted_name)
+                    (identifier)
+                ] @import.symbol)
             
             ; -----------------------------
             ; import x.y.z as alias
@@ -121,16 +132,22 @@ class RepoGraph:
             return code[node.start_byte:node.end_byte].decode("utf8")
 
         # matches() retorna:  [(pattern_index, {capture_name: [nodes...]})]
-        for pattern_index, captures_dict in cursor.matches(root_node):
-            # Cada pattern encontrado pode ter vários nodes capturados
-            for capture_name, nodes in captures_dict.items():
-                if capture_name != "import.module":
+        for _, captures in cursor.matches(root_node):
+            for capture_name, nodes in captures.items():
+                # Accept captures that represent import targets
+                if capture_name not in {"import.module"}:
                     continue
 
                 for node in nodes:
-                    module = text(node)
-                    if module:
-                        yield module
+                    module = text(node).strip()
+                    if not module:
+                        continue
+
+                    # Remove alias but keep the real module
+                    if " as " in module:
+                        module = module.split(" as ")[0].strip()
+
+                    yield module
 
 
 
@@ -162,8 +179,11 @@ class RepoGraph:
 
         if os.path.exists(abs_tgt):
             final_rel = os.path.relpath(abs_tgt, self.root)
-            print(f"[DEBUG]       ✔ Edge created: {src} -> {final_rel}")
-            self.graph.add_edge(src, final_rel)
+            if not self.graph.has_edge(src, final_rel):
+                print(f"[DEBUG]       ✔ Edge created: {src} -> {final_rel}")
+                self.graph.add_edge(src, final_rel)
+            else:
+                print(f"[DEBUG]       ↷ Edge already exists: {src} -> {final_rel}")
             return
         
         # Module is a package (directory), not a file
