@@ -81,6 +81,7 @@ class RepoGraph:
         """
 
         QUERY = """
+            ; Rule 1
             ; -----------------------------
             ; import x.y
             ; import x.y as z
@@ -92,6 +93,7 @@ class RepoGraph:
                     name: (dotted_name))
             ] @import.module)
 
+            ; Rule 2
             ; -----------------------------
             ; from x.y import z
             ; from .x.y import z
@@ -114,6 +116,7 @@ class RepoGraph:
                     (identifier)
                 ] @import.symbol)
             
+            ; Rule 3
             ; -----------------------------
             ; import x.y.z as alias
             ; -----------------------------
@@ -176,6 +179,9 @@ class RepoGraph:
 
         # Absolute target path
         abs_tgt = os.path.join(self.root, tgt_rel)
+        
+        print(f"[DEBUG]       Relative file: {tgt_rel} ")
+        print(f"[DEBUG]       Absolute file: {abs_tgt} ")
 
         if os.path.exists(abs_tgt):
             final_rel = os.path.relpath(abs_tgt, self.root)
@@ -194,8 +200,11 @@ class RepoGraph:
                 if f.endswith(".py") and f != "__init__.py":
                     abs_f = os.path.join(dir_candidate, f)
                     final_rel = os.path.relpath(abs_f, self.root)
-                    print(f"[DEBUG]         ✔ Edge created: {src} -> {final_rel}")
-                    self.graph.add_edge(src, final_rel)
+                    if not self.graph.has_edge(src, final_rel):
+                        print(f"[DEBUG]         ✔ Edge created: {src} -> {final_rel}")
+                        self.graph.add_edge(src, final_rel)
+                    else:
+                        print(f"[DEBUG]         ↷ Edge already exists: {src} -> {final_rel}")
             return
         
         print(f"[DEBUG]       ✖ Target not found in repo: {tgt_rel}")
