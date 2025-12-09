@@ -54,9 +54,12 @@ class RepoGraph:
                 root_node = tree.root_node
 
                 print("[DEBUG]   Extracting imports...")
-                for imp in self._extract_imports(root_node, code):
-                    print(f"[DEBUG]     Found import: '{imp}'")
-                    self._add_edge(rel, imp)
+                for module, symbol in self._extract_imports(root_node, code):
+                    if symbol:
+                        print(f"[DEBUG]     Found import: from '{module}' import '{symbol}'")
+                    else:
+                        print(f"[DEBUG]     Found import: '{module}'")
+                    self._add_edge(rel, module, symbol)
 
     # ------------------------------------------------------------
     # Helpers
@@ -71,150 +74,229 @@ class RepoGraph:
     # ------------------------------------------------------------
     # Import extraction using Tree-Sitter
     # ------------------------------------------------------------
-    from tree_sitter import Query, QueryCursor
-
     def _extract_imports(self, root_node, code: bytes):
         """
-        Extrai imports usando QueryCursor moderno (API nova):
-        cursor = QueryCursor(query)
-        matches = cursor.matches(node)
+        Extrai imports capturando tanto módulos quanto símbolos.
+        
+        Retorna tuplas (module, symbol):
+        - `import pkg` → ('pkg', None)
+        - `import pkg.sub` → ('pkg.sub', None)
+        - `from pkg import x` → ('pkg', 'x')
+        - `from pkg import x, y` → ('pkg', 'x'), ('pkg', 'y')
+        - `from pkg.sub import func` → ('pkg.sub', 'func')
+        - `from . import x` → ('.', 'x')
         """
 
         QUERY = """
-            ; Rule 1
-            ; -----------------------------
+            ; Rule 1: Simple import statements
             ; import x.y
             ; import x.y as z
-            ; -----------------------------
             (import_statement
-            [
-                (dotted_name)
-                (aliased_import
-                    name: (dotted_name))
-            ] @import.module)
+                name: [
+                    (dotted_name) @import.module
+                    (aliased_import
+                        name: (dotted_name) @import.module)
+                ])
 
-            ; Rule 2
-            ; -----------------------------
+            ; Rule 2: from...import with module name
             ; from x.y import z
-            ; from .x.y import z
-            ; from .. import z
-            ; from .. import z1, z2, z3
-            ; from .. import z.t
-            ; from .. import z as k
-            ; from .. import (a, b, c)
-            ; -----------------------------
+            ; from . import z
+            ; from ..x import z
             (import_from_statement
                 module_name: [
-                    (dotted_name)
-                    (relative_import)
-                ] @import.module)
-            
-            (import_from_statement
-                module_name: (dotted_name)? @import.module
+                    (dotted_name) @import.from.module
+                    (relative_import) @import.from.module
+                ]
                 name: [
-                    (dotted_name)
-                    (identifier)
-                ] @import.symbol)
+                    (dotted_name) @import.from.symbol
+                    (identifier) @import.from.symbol
+                    (aliased_import
+                        name: [
+                            (dotted_name) @import.from.symbol
+                            (identifier) @import.from.symbol
+                        ])
+                ])
             
-            ; Rule 3
-            ; -----------------------------
-            ; import x.y.z as alias
-            ; -----------------------------
-            (import_statement
-                (aliased_import
-                    name: (dotted_name) @import.module
-                    alias: (identifier) @import.alias
-                )+
-            )
+            ; Rule 3: from...import without explicit name (catches the module only)
+            (import_from_statement
+                module_name: [
+                    (dotted_name) @import.from.module.only
+                    (relative_import) @import.from.module.only
+                ])
         """
 
         query = Query(self.language, QUERY)
-        cursor = QueryCursor(query)   # ← assinatura nova
+        cursor = QueryCursor(query)
 
         def text(node):
             return code[node.start_byte:node.end_byte].decode("utf8")
 
-        # matches() retorna:  [(pattern_index, {capture_name: [nodes...]})]
+        seen = set()  # Evita duplicatas
+        
         for pattern_index, captures in cursor.matches(root_node):
-            for capture_name, nodes in captures.items():
-                # Accept captures that represent import targets
-                if capture_name not in {"import.module"}:
-                    continue
-
-                for node in nodes:
+            # Case 1: Simple import (import pkg.sub)
+            if "import.module" in captures:
+                for node in captures["import.module"]:
                     module = text(node).strip()
-                    if not module:
-                        continue
-
-                    # Remove alias but keep the real module
                     if " as " in module:
                         module = module.split(" as ")[0].strip()
-
-                    yield module
+                    
+                    key = (module, None)
+                    if key not in seen:
+                        seen.add(key)
+                        yield key
+            
+            # Case 2: from...import with both module and symbol
+            if "import.from.module" in captures and "import.from.symbol" in captures:
+                modules = [text(n).strip() for n in captures["import.from.module"]]
+                symbols = [text(n).strip() for n in captures["import.from.symbol"]]
+                
+                for module in modules:
+                    for symbol in symbols:
+                        if " as " in symbol:
+                            symbol = symbol.split(" as ")[0].strip()
+                        
+                        key = (module, symbol)
+                        if key not in seen:
+                            seen.add(key)
+                            yield key
+            
+            # Case 3: from...import without symbols captured (just module)
+            if "import.from.module.only" in captures:
+                for node in captures["import.from.module.only"]:
+                    module = text(node).strip()
+                    key = (module, None)
+                    if key not in seen:
+                        seen.add(key)
+                        yield key
 
 
 
     # ------------------------------------------------------------
     # Graph edge creation
     # ------------------------------------------------------------
-    def _add_edge(self, src: str, module: str):
-        print(f"[DEBUG]     Resolving import '{module}' from '{src}'")
+    def _add_edge(self, src: str, module: str, symbol: str = None):
+        """
+        Cria edge de dependência considerando a semântica correta de imports Python:
+        - `import pkg` → pkg/__init__.py (apenas)
+        - `import pkg.a` → pkg/__init__.py E pkg/a.py
+        - `from pkg import a` → pkg/__init__.py OU pkg/a.py (se 'a' for um arquivo)
+        - `from pkg.a import func` → pkg/__init__.py E pkg/a.py
+        """
+        print(f"[DEBUG]     Resolving import module='{module}' symbol='{symbol}' from '{src}'")
 
         src_abs = os.path.join(self.root, src)
         src_dir = os.path.dirname(src_abs)
 
-        # Case 1 — Relative import (starts with ".")
+        # Resolve module path
         if module.startswith("."):
             dots = len(module) - len(module.lstrip("."))
-            tail = module[dots:] # after the dots (may be empty)
+            tail = module[dots:]
 
-            # Start from file directory, then go up N-1 levels
             base = src_dir
             for _ in range(dots - 1):
                 base = os.path.dirname(base)
 
-            # Build absolute target path
-            tgt_abs = os.path.join(base, tail.replace(".", os.sep) + ".py")
-
-        else:
-            # Case 2 — Normal import "x.y.z"
-            tgt_abs = os.path.join(
-                self.root,
-                module.replace(".", os.sep) + ".py"
-            )
-
-        print(f"[DEBUG]       Absolute candidate: {tgt_abs}")
-
-        # If file exists directly
-        if os.path.exists(tgt_abs):
-            final_rel = os.path.relpath(tgt_abs, self.root)
-            if not self.graph.has_edge(src, final_rel):
-                print(f"[DEBUG]       ✔ Edge created: {src} -> {final_rel}")
-                self.graph.add_edge(src, final_rel)
+            if tail:
+                parts = tail.split(".")
+                module_path = os.path.join(base, *parts)
             else:
-                print(f"[DEBUG]       ↷ Edge already exists: {src} -> {final_rel}")
+                module_path = base
+        else:
+            parts = module.split(".")
+            module_path = os.path.join(self.root, *parts)
+
+        print(f"[DEBUG]       Module path: {module_path}")
+
+        # Add dependencies to parent __init__.py files
+        self._add_parent_init_deps(src, module_path)
+
+        # If there's a symbol, try to resolve it as a file first
+        if symbol:
+            # Try symbol as a submodule: pkg + symbol = pkg/symbol.py
+            symbol_path = os.path.join(module_path, symbol.replace(".", os.sep) + ".py")
+            if os.path.exists(symbol_path):
+                symbol_rel = os.path.relpath(symbol_path, self.root)
+                print(f"[DEBUG]       ✔ Symbol '{symbol}' resolved to file: {symbol_rel}")
+                self._add_graph_edge(src, symbol_rel)
+                return
+            
+            # Try symbol as a package: pkg/symbol/__init__.py
+            symbol_pkg = os.path.join(module_path, symbol.replace(".", os.sep))
+            if os.path.isdir(symbol_pkg):
+                init_file = os.path.join(symbol_pkg, "__init__.py")
+                if os.path.exists(init_file):
+                    init_rel = os.path.relpath(init_file, self.root)
+                    print(f"[DEBUG]       ✔ Symbol '{symbol}' resolved to package: {init_rel}")
+                    self._add_graph_edge(src, init_rel)
+                    return
+            
+            # Symbol is not a file, so it must be defined in module's __init__.py
+            print(f"[DEBUG]       → Symbol '{symbol}' is not a file, assuming it's from __init__.py")
+
+        # Try module as a direct .py file
+        module_file = module_path + ".py"
+        if os.path.exists(module_file):
+            module_rel = os.path.relpath(module_file, self.root)
+            self._add_graph_edge(src, module_rel)
             return
 
-        # If target is a package directory
-        pkg_abs = tgt_abs[:-3]  # remove ".py"
-        if os.path.isdir(pkg_abs):
-            print(f"[DEBUG]       → Import refers to package: {pkg_abs}")
-            for f in os.listdir(pkg_abs):
-                # Init file does not depend on init files
-                if src.endswith("__init__.py") and f == "__init__.py":
-                    continue
-                    
-                if f.endswith(".py"):
-                    abs_f = os.path.join(pkg_abs, f)
-                    final_rel = os.path.relpath(abs_f, self.root)
-                    if not self.graph.has_edge(src, final_rel):
-                        print(f"[DEBUG]         ✔ Edge created: {src} -> {final_rel}")
-                        self.graph.add_edge(src, final_rel)
-                    else:
-                        print(f"[DEBUG]         ↷ Edge already exists: {src} -> {final_rel}")
-            return
+        # Try module as a package
+        if os.path.isdir(module_path):
+            init_file = os.path.join(module_path, "__init__.py")
+            if os.path.exists(init_file):
+                init_rel = os.path.relpath(init_file, self.root)
+                self._add_graph_edge(src, init_rel)
+                print(f"[DEBUG]       → Package import resolved to __init__.py")
+                return
+            else:
+                print(f"[DEBUG]       ⚠ Directory exists but no __init__.py: {module_path}")
+                return
 
-        print(f"[DEBUG]       ✖ Target not found: {tgt_abs}")
+        print(f"[DEBUG]       ✖ Target not found: {module_path}")
+
+
+    def _add_parent_init_deps(self, src: str, tgt_path: str):
+        """
+        Adiciona dependências para todos os __init__.py no caminho até o módulo alvo.
+        
+        Ex: import pkg.sub.module
+        → adiciona pkg/__init__.py e pkg/sub/__init__.py
+        
+        Isso reflete o fato de que Python executa todos os __init__.py no caminho.
+        """
+        rel_path = os.path.relpath(tgt_path, self.root)
+        
+        # Se o target está fora do repo, não adiciona parent inits
+        if rel_path.startswith(".."):
+            return
+        
+        path_parts = rel_path.split(os.sep)
+        
+        # Percorre cada nível do caminho
+        current_path = self.root
+        for part in path_parts[:-1]:  # Não inclui o arquivo/módulo final
+            current_path = os.path.join(current_path, part)
+            init_file = os.path.join(current_path, "__init__.py")
+            
+            if os.path.exists(init_file):
+                init_rel = os.path.relpath(init_file, self.root)
+                print(f"[DEBUG]       → Adding parent package dependency: {init_rel}")
+                self._add_graph_edge(src, init_rel)
+
+
+    def _add_graph_edge(self, src: str, target: str):
+        """Helper to add edge to graph with logging."""
+        # Skip if both are __init__.py files
+        if src.endswith("__init__.py") and target.endswith("__init__.py"):
+            print(f"[DEBUG]       ⊘ Skipping __init__.py -> __init__.py edge")
+            return
+        
+        if not self.graph.has_edge(src, target):
+            print(f"[DEBUG]       ✔ Edge created: {src} -> {target}")
+            self.graph.add_edge(src, target)
+        else:
+            print(f"[DEBUG]       ↷ Edge already exists: {src} -> {target}")
 
 
     # ------------------------------------------------------------
