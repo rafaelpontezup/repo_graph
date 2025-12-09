@@ -85,6 +85,7 @@ class RepoGraph:
         - `from pkg import x, y` → ('pkg', 'x'), ('pkg', 'y')
         - `from pkg.sub import func` → ('pkg.sub', 'func')
         - `from . import x` → ('.', 'x')
+        - `from pkg import *` → ('pkg', None)
         """
 
         QUERY = """
@@ -98,7 +99,7 @@ class RepoGraph:
                         name: (dotted_name) @import.module)
                 ])
 
-            ; Rule 2: from...import with module name
+            ; Rule 2: from...import statements
             ; from x.y import z
             ; from . import z
             ; from ..x import z
@@ -116,6 +117,16 @@ class RepoGraph:
                             (identifier) @import.from.symbol
                         ])
                 ])
+            
+            ; Rule 3: from...import * (wildcard)
+            ; from x.y import *
+            ; from . import *
+            (import_from_statement
+                module_name: [
+                    (dotted_name) @import.from.wildcard.module
+                    (wildcard_import) *
+                ]
+            )
         """
 
         query = Query(self.language, QUERY)
@@ -139,7 +150,7 @@ class RepoGraph:
                         seen.add(key)
                         yield key
             
-            # Case 2: from...import with both module and symbol
+            # Case 2: from...import with symbols
             if "import.from.module" in captures and "import.from.symbol" in captures:
                 modules = [text(n).strip() for n in captures["import.from.module"]]
                 symbols = [text(n).strip() for n in captures["import.from.symbol"]]
@@ -153,12 +164,24 @@ class RepoGraph:
                         if key not in seen:
                             seen.add(key)
                             yield key
+            
+            # Case 3: from...import * (wildcard)
+            # Rule 3 matches ALL import_from_statement, so we need to check for wildcard procedurally
+            if "import.from.wildcard.module" in captures:
+                modules = [text(n).strip() for n in captures["import.from.wildcard.module"]]
+                
+                for module in modules:
+                    # Get the import_from_statement node to verify it's actually a wildcard
+                    import_stmt_node = captures["import.from.wildcard.module"][0].parent
+                    has_wildcard = any(child.type == "wildcard_import" for child in import_stmt_node.children)
+                    
+                    if has_wildcard:
+                        key = (module, None)
+                        if key not in seen:
+                            seen.add(key)
+                            yield key
 
 
-
-    # ------------------------------------------------------------
-    # Graph edge creation
-    # ------------------------------------------------------------
     def _add_edge(self, src: str, module: str, symbol: str = None):
         """
         Cria edge de dependência considerando a semântica correta de imports Python:
@@ -234,7 +257,7 @@ class RepoGraph:
                             self._add_graph_edge(src, symbol_init_rel)
                             return
                     
-                    # Symbol is not a file or package, so it must be defined in the __init__.py
+                    # Symbol is not a file/package, must be defined in the __init__.py
                     print(f"[DEBUG]       → Symbol '{symbol}' is not a file, defined in {init_rel}")
                 return
             else:
@@ -338,7 +361,7 @@ class Repository:
 
 
     def list_files(self, base_dir: Optional[Path] = ".") -> List[Path]:
-        target_dir = (repo_root / base_dir).resolve()
+        target_dir = (self.repository_path / base_dir).resolve()
         if not target_dir.exists():
             raise ValueError(f"❌ Path not found: {target_dir}")
 
