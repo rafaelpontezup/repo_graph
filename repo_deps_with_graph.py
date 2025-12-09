@@ -116,13 +116,6 @@ class RepoGraph:
                             (identifier) @import.from.symbol
                         ])
                 ])
-            
-            ; Rule 3: from...import without explicit name (catches the module only)
-            (import_from_statement
-                module_name: [
-                    (dotted_name) @import.from.module.only
-                    (relative_import) @import.from.module.only
-                ])
         """
 
         query = Query(self.language, QUERY)
@@ -160,15 +153,6 @@ class RepoGraph:
                         if key not in seen:
                             seen.add(key)
                             yield key
-            
-            # Case 3: from...import without symbols captured (just module)
-            if "import.from.module.only" in captures:
-                for node in captures["import.from.module.only"]:
-                    module = text(node).strip()
-                    key = (module, None)
-                    if key not in seen:
-                        seen.add(key)
-                        yield key
 
 
 
