@@ -135,7 +135,7 @@ class RepoGraph:
             return code[node.start_byte:node.end_byte].decode("utf8")
 
         # matches() retorna:  [(pattern_index, {capture_name: [nodes...]})]
-        for _, captures in cursor.matches(root_node):
+        for pattern_index, captures in cursor.matches(root_node):
             for capture_name, nodes in captures.items():
                 # Accept captures that represent import targets
                 if capture_name not in {"import.module"}:
@@ -200,7 +200,11 @@ class RepoGraph:
         if os.path.isdir(pkg_abs):
             print(f"[DEBUG]       → Import refers to package: {pkg_abs}")
             for f in os.listdir(pkg_abs):
-                if f.endswith(".py") and f != "__init__.py":
+                # Init file does not depend on init files
+                if src.endswith("__init__.py") and f == "__init__.py":
+                    continue
+                    
+                if f.endswith(".py"):
                     abs_f = os.path.join(pkg_abs, f)
                     final_rel = os.path.relpath(abs_f, self.root)
                     if not self.graph.has_edge(src, final_rel):
