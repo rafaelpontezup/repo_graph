@@ -211,34 +211,15 @@ class RepoGraph:
         # Add dependencies to parent __init__.py files
         self._add_parent_init_deps(src, module_path)
 
-        # If there's a symbol, try to resolve it as a file first
-        if symbol:
-            # Try symbol as a submodule: pkg + symbol = pkg/symbol.py
-            symbol_path = os.path.join(module_path, symbol.replace(".", os.sep) + ".py")
-            if os.path.exists(symbol_path):
-                symbol_rel = os.path.relpath(symbol_path, self.root)
-                print(f"[DEBUG]       ✔ Symbol '{symbol}' resolved to file: {symbol_rel}")
-                self._add_graph_edge(src, symbol_rel)
-                return
-            
-            # Try symbol as a package: pkg/symbol/__init__.py
-            symbol_pkg = os.path.join(module_path, symbol.replace(".", os.sep))
-            if os.path.isdir(symbol_pkg):
-                init_file = os.path.join(symbol_pkg, "__init__.py")
-                if os.path.exists(init_file):
-                    init_rel = os.path.relpath(init_file, self.root)
-                    print(f"[DEBUG]       ✔ Symbol '{symbol}' resolved to package: {init_rel}")
-                    self._add_graph_edge(src, init_rel)
-                    return
-            
-            # Symbol is not a file, so it must be defined in module's __init__.py
-            print(f"[DEBUG]       → Symbol '{symbol}' is not a file, assuming it's from __init__.py")
-
         # Try module as a direct .py file
         module_file = module_path + ".py"
         if os.path.exists(module_file):
             module_rel = os.path.relpath(module_file, self.root)
             self._add_graph_edge(src, module_rel)
+            # If there's a symbol, it's a class/function inside this module file
+            # The dependency is already captured by adding the module file
+            if symbol:
+                print(f"[DEBUG]       → Symbol '{symbol}' is defined in {module_rel}")
             return
 
         # Try module as a package
@@ -248,6 +229,29 @@ class RepoGraph:
                 init_rel = os.path.relpath(init_file, self.root)
                 self._add_graph_edge(src, init_rel)
                 print(f"[DEBUG]       → Package import resolved to __init__.py")
+                
+                # If there's a symbol, try to resolve it as a submodule of this package
+                if symbol:
+                    # Try symbol as a submodule: pkg + symbol = pkg/symbol.py
+                    symbol_path = os.path.join(module_path, symbol.replace(".", os.sep) + ".py")
+                    if os.path.exists(symbol_path):
+                        symbol_rel = os.path.relpath(symbol_path, self.root)
+                        print(f"[DEBUG]       ✔ Symbol '{symbol}' resolved to submodule: {symbol_rel}")
+                        self._add_graph_edge(src, symbol_rel)
+                        return
+                    
+                    # Try symbol as a sub-package: pkg/symbol/__init__.py
+                    symbol_pkg = os.path.join(module_path, symbol.replace(".", os.sep))
+                    if os.path.isdir(symbol_pkg):
+                        symbol_init = os.path.join(symbol_pkg, "__init__.py")
+                        if os.path.exists(symbol_init):
+                            symbol_init_rel = os.path.relpath(symbol_init, self.root)
+                            print(f"[DEBUG]       ✔ Symbol '{symbol}' resolved to sub-package: {symbol_init_rel}")
+                            self._add_graph_edge(src, symbol_init_rel)
+                            return
+                    
+                    # Symbol is not a file or package, so it must be defined in the __init__.py
+                    print(f"[DEBUG]       → Symbol '{symbol}' is not a file, defined in {init_rel}")
                 return
             else:
                 print(f"[DEBUG]       ⚠ Directory exists but no __init__.py: {module_path}")
