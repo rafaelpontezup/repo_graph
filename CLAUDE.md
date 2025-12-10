@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Repo Graph CLI is a tool that scans Python and Java repositories using Tree-sitter, builds dependency graphs with NetworkX, and provides a CLI (Typer) for querying dependencies and exports.
+Repo Graph is a tool that scans Python repositories using Tree-sitter, builds file dependency graphs with NetworkX, and provides both a CLI and programmatic API for querying dependencies.
 
 ## Setup
 
@@ -16,35 +16,19 @@ pip install -r requirements.txt
 
 ## Common Commands
 
-**Build dependency graph:**
+**Analyze dependencies for a file or directory:**
 ```bash
-python -m repo_graph.cli.main build repo /path/to/repo
-```
-
-**Query dependencies:**
-```bash
-python -m repo_graph.cli.main query depends mymodule.Class.method
-python -m repo_graph.cli.main query used-by mymodule.Class.method
-```
-
-**Alternative standalone scripts (more detailed output):**
-```bash
-python repo_deps.py /path/to/repo --show-files path/to/file.py
-python repo.py /path/to/repo --show-files path/to/file.py
+python -m repo_graph.main_cli /path/to/repo --show-files path/to/file.py
+python -m repo_graph.main_cli /path/to/repo --show-files path/to/directory
 ```
 
 ## Architecture
 
-### Core Components
+### Core Package (`repo_graph/`)
 
-- **`repo_graph/cli/`** - Typer CLI with `build` and `query` subcommands
-- **`repo_graph/parsers/`** - Tree-sitter based parsers for Python (`python.py`) and Java (`java.py`)
-- **`repo_graph/graph/store.py`** - GraphStore class wrapping NetworkX DiGraph with pickle serialization
-
-### Standalone Scripts (Root Level)
-
-- **`repo_deps.py`** - Full-featured Repository class using Tree-sitter or AST fallback for import extraction
-- **`repo_deps_with_graph.py`** - Enhanced version with RepoGraph class using Tree-sitter queries (SCM patterns) for import extraction; includes detailed debug logging
+- **`repo.py`** - `Repository` class: public API with `find_dependencies()` and `find_usages()` methods
+- **`repo_graph.py`** - `RepoGraph` class: internal engine that builds the dependency graph using Tree-sitter
+- **`main_cli.py`** - CLI entry point
 
 ### Key Patterns
 
@@ -59,11 +43,10 @@ python repo.py /path/to/repo --show-files path/to/file.py
 - Handles both package imports (`pkg/__init__.py`) and module imports (`pkg/module.py`)
 - Adds dependencies to parent `__init__.py` files in the import path
 
-**Graph storage:** Dependencies stored as NetworkX DiGraph, serialized to `graph.pkl`
+**Graph structure:** NetworkX DiGraph where nodes are relative file paths and edges represent import dependencies
 
 ## Dependencies
 
-- `typer` - CLI framework
 - `networkx` - Graph data structure
 - `tree_sitter` - Parser library
-- `tree-sitter-python`, `tree-sitter-java` - Language grammars
+- `tree-sitter-python` - Python grammar

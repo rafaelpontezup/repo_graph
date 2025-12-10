@@ -1,7 +1,6 @@
-# Repo Graph CLI
+# Repo Graph
 
-This project scans repositories (Python + Java) using Tree-sitter and builds a dependency graph (NetworkX).
-It includes a Typer CLI to query dependencies and export visualizations.
+A Python tool that scans repositories using Tree-sitter to build file dependency graphs with NetworkX.
 
 ## Setup
 
@@ -11,36 +10,36 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## Build Tree-sitter language bundle
-
-This project expects the `build/my-languages.so` file produced by `tree_sitter.Language.build_library`.
-A helper script `build_languages.sh` is provided; it will clone the grammars into `vendor/` and build the bundle.
-
-```bash
-chmod +x build_languages.sh
-./build_languages.sh
-```
-
 ## Usage
 
-Build graph:
+### CLI
+
+Analyze dependencies for a file or directory:
+
 ```bash
-python -m repo_graph.cli.main build repo /path/to/repo
+python -m repo_graph.main_cli /path/to/repo --show-files path/to/file.py
+python -m repo_graph.main_cli /path/to/repo --show-files path/to/directory
 ```
 
-Query:
-```bash
-python -m repo_graph.cli.main query depends mymodule.Class.method
-python -m repo_graph.cli.main query used-by mymodule.Class.method
-```
+### Programmatic API
 
-Export:
-```bash
-python -m repo_graph.cli.main build repo /path/to/repo
-python -m repo_graph.cli.main query export-html out.html
+```python
+from pathlib import Path
+from repo_graph.repo import Repository
+
+repo = Repository(Path("/path/to/repo"))
+
+# Find what a file depends on
+deps = repo.find_dependencies(Path("/path/to/repo/module.py"))
+print(deps.file_dependencies)
+
+# Find what files import a given file
+usages = repo.find_usages(Path("/path/to/repo/module.py"))
+print(usages.file_usages)
 ```
 
 ## Notes
 
-- Parsers provide a strong starting point but do NOT yet resolve fully-qualified symbols across multiple modules. For best results, run on a codebase with conventional imports.
-- If you want, I can further implement precise symbol resolution (cross-file) and richer metadata.
+- Currently supports Python files only (Java parser is placeholder)
+- Resolves relative imports, package imports, and wildcard imports
+- Does NOT yet resolve fully-qualified symbols across modules
