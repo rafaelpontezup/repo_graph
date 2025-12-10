@@ -1,2 +1,6 @@
 from main import *
-from main import func_x
+
+
+def main():
+    from main import func_x
+    func_x()
