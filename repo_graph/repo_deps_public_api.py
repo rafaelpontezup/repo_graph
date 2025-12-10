@@ -1,3 +1,4 @@
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
@@ -14,17 +15,14 @@ class FileUsages:
     file_usages: Optional[List[Path]]
 
 
-class Repository:
+class Repository(ABC):
 
-    def __init__(self, repository_path: Path):
-        self.repository_path = repository_path
-
-        
+    @abstractmethod
     def find_dependencies(self, file_path: Path) -> FileDependencies:
         """Finds all file dependencies of the specified `file_path` in the repository"""
         pass
 
-    
+    @abstractmethod
     def find_usages(self, file_path: Path) -> FileUsages:
         """Finds all file usages of the specified `file_path` in the repository"""
         pass
