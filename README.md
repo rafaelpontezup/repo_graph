@@ -21,6 +21,14 @@ python -m repo_graph.main_cli /path/to/repo --show-files path/to/file.py
 python -m repo_graph.main_cli /path/to/repo --show-files path/to/directory
 ```
 
+#### Testing CLI with sample files
+
+To test it locally during development, you can run:
+
+```bash
+python -m repo_graph.main_cli samples/happy-path --show-files . > output/repo-$(date +%Y%m%d%H%M%S).out
+```
+
 ### Programmatic API
 
 ```python
