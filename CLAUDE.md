@@ -30,7 +30,7 @@ python -m repo_graph.cli.main query used-by mymodule.Class.method
 **Alternative standalone scripts (more detailed output):**
 ```bash
 python repo_deps.py /path/to/repo --show-files path/to/file.py
-python repo_deps_with_graph.py /path/to/repo --show-files path/to/file.py
+python repo.py /path/to/repo --show-files path/to/file.py
 ```
 
 ## Architecture

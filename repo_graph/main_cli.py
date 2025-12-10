@@ -1,4 +1,4 @@
-from repo_graph.repo_deps_with_graph import Repository
+from repo_graph.repo import Repository
 
 # -------------------------
 # Example usage
