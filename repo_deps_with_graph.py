@@ -124,9 +124,9 @@ class RepoGraph:
             (import_from_statement
                 module_name: [
                     (dotted_name) @import.from.wildcard.module
-                    (wildcard_import) *
+                    (relative_import) @import.from.wildcard.module
                 ]
-            )
+                (wildcard_import))
         """
 
         query = Query(self.language, QUERY)
@@ -166,20 +166,14 @@ class RepoGraph:
                             yield key
             
             # Case 3: from...import * (wildcard)
-            # Rule 3 matches ALL import_from_statement, so we need to check for wildcard procedurally
             if "import.from.wildcard.module" in captures:
                 modules = [text(n).strip() for n in captures["import.from.wildcard.module"]]
                 
                 for module in modules:
-                    # Get the import_from_statement node to verify it's actually a wildcard
-                    import_stmt_node = captures["import.from.wildcard.module"][0].parent
-                    has_wildcard = any(child.type == "wildcard_import" for child in import_stmt_node.children)
-                    
-                    if has_wildcard:
-                        key = (module, None)
-                        if key not in seen:
-                            seen.add(key)
-                            yield key
+                    key = (module, None)  # None = sem símbolo específico, importa tudo
+                    if key not in seen:
+                        seen.add(key)
+                        yield key
 
 
     def _add_edge(self, src: str, module: str, symbol: str = None):
