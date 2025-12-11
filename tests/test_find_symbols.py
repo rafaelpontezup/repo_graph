@@ -1,10 +1,8 @@
-import os
 import unittest
 from pathlib import Path
 from typing import override
 
 from repo_graph.repo import FileUsages
-from repo_graph.symbol_finder import SymbolUsages
 
 
 class FindSimbolsTest(unittest.TestCase):
@@ -34,13 +32,7 @@ class FindSimbolsTest(unittest.TestCase):
         # validation
         self.assertEqual("User.email", symbol_usages.symbol_name)
         self.assertEqual(file_usages.source_file, symbol_usages.definition_location.file_path)
-        self.assertEqual(6, len(symbol_usages.references))  # add assertion here
-        self.assertEqual(
-            4,
-            len([ref for ref in symbol_usages.references if ref.location.file_path.name == "handler.py"])
-        )
-        self.assertEqual(
-            2,
-            len([ref for ref in symbol_usages.references if ref.location.file_path.name == "service.py"])
-        )
+        self.assertEqual(6, len(symbol_usages.references))
+        self.assertEqual(4, len(symbol_usages.find_references_of("handler.py")))
+        self.assertEqual(2, len(symbol_usages.find_references_of("service.py")))
 

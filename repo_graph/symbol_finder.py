@@ -35,6 +35,38 @@ class SymbolUsages:
     definition_location: Optional[SymbolLocation]
     references: List[SymbolReference]
 
+    def find_references_of(self, file_path: str | Path) -> List[SymbolReference]:
+        if not self.references:
+            return []
+
+        file_path = Path(file_path)
+
+        # Try to find references by the exact file path
+        found_references = [
+            ref for ref in self.references
+            if ref.location.file_path == file_path
+        ]
+        if found_references:
+            return found_references
+
+        # Try to find references by parent and file name
+        found_references = [
+            ref for ref in self.references
+            if ref.location.file_path.parent.name == file_path.parent.name
+               and ref.location.file_path.name == file_path.name
+        ]
+        if found_references:
+            return found_references
+
+        # Otherwise, try to find references by file name only
+        found_references = [
+            ref for ref in self.references
+            if ref.location.file_path.name == file_path.name
+        ]
+        return found_references
+
+
+
     def pretty_print(self):
 
         file_path = self.definition_location.file_path
