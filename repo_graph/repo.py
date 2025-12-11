@@ -40,9 +40,10 @@ class SymbolUsages:
     def pretty_print(self):
 
         file_path = self.definition_location.file_path
+        formatted_file_path = f".../{file_path.parent.name}/{file_path.name}"
 
         print(f"Symbol: {self.symbol_name}")
-        print(f"Defined by: .../{file_path.parent.name}/{file_path.name} ({self.definition_location.context_line})")
+        print(f"Defined by: {formatted_file_path} ({self.definition_location.context_line})")
         print(f"Found {len(self.references)} usages:")
 
         for ref in self.references:
@@ -408,6 +409,7 @@ class SymbolFinder:
         root_node = tree.root_node
 
         # Verificar se o arquivo importa a classe
+        # TODO: Entendo que não precisamos verificar pois todos os arquivos informados em FileUsages.file_usages com certeza dependem do  FileUsages.source_file
         # if not self._file_imports_class(root_node, code, class_name):
         #     return []
 
