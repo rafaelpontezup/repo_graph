@@ -447,10 +447,10 @@ class SymbolFinder:
                         symbol_name=class_name
                     ))
 
-        # Imports
+        # Imports: from module import Class
         import_query = """
             (import_from_statement
-                name: (identifier) @import.name)
+                (dotted_name (identifier) @import.name))
         """
 
         for match in self._run_query(import_query, root_node):
