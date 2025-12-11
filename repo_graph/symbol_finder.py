@@ -101,11 +101,49 @@ class SymbolFinder:
         return self._parser
 
     def _parse_qualified_name(self, name: str) -> tuple:
-        """Separa 'User.email' em ('User', 'email')."""
-        parts = name.split(".", 1)
+        """
+        Parseia o nome qualificado com prefixo.
+
+        Formato: "prefix:Name" ou "prefix:Name.attribute"
+        Prefixos suportados: "class", "function"
+
+        Retorna: (symbol_type, name, attr_name)
+            - symbol_type: "class" ou "function"
+            - name: nome da classe ou função
+            - attr_name: nome do atributo (apenas para classes) ou None
+
+        Exemplos:
+            "class:User"        -> ("class", "User", None)
+            "class:User.email"  -> ("class", "User", "email")
+            "function:validate" -> ("function", "validate", None)
+        """
+        if ":" not in name:
+            raise ValueError(
+                f"Nome qualificado deve ter prefixo 'class:' ou 'function:'. "
+                f"Recebido: '{name}'. "
+                f"Exemplos válidos: 'class:User', 'class:User.email', 'function:validate'"
+            )
+
+        prefix, rest = name.split(":", 1)
+        symbol_type = prefix.lower()
+
+        if symbol_type not in ("class", "function"):
+            raise ValueError(
+                f"Prefixo inválido: '{prefix}'. Use 'class:' ou 'function:'"
+            )
+
+        if symbol_type == "function":
+            if "." in rest:
+                raise ValueError(
+                    f"Funções não suportam atributos. Use 'function:nome' sem '.'"
+                )
+            return symbol_type, rest, None
+
+        # symbol_type == "class"
+        parts = rest.split(".", 1)
         class_name = parts[0]
         attr_name = parts[1] if len(parts) > 1 else None
-        return class_name, attr_name
+        return symbol_type, class_name, attr_name
 
     def _read_file(self, file_path: Path) -> Optional[bytes]:
         """Lê arquivo como bytes."""
@@ -126,6 +164,39 @@ class SymbolFinder:
         query = Query(self._language, query_str)
         cursor = QueryCursor(query)
         return cursor.matches(root_node)
+
+    def _find_function_definition(
+        self,
+        file_path: Path,
+        function_name: str
+    ) -> Optional[SymbolLocation]:
+        """Encontra onde uma função é definida."""
+        code = self._read_file(file_path)
+        if code is None:
+            return None
+
+        parser = self._get_parser()
+        tree = parser.parse(code)
+
+        # Query para encontrar definição de função
+        query_str = """
+            (function_definition
+                name: (identifier) @func.name)
+        """
+
+        for pattern_index, captures in self._run_query(query_str, tree.root_node):
+            for node in captures.get("func.name", []):
+                name = code[node.start_byte:node.end_byte].decode("utf-8")
+                if name == function_name:
+                    return SymbolLocation(
+                        file_path=file_path,
+                        line=node.start_point[0] + 1,
+                        column=node.start_point[1],
+                        end_column=node.end_point[1],
+                        context_line=self._get_context_line(code, node.start_point[0])
+                    )
+
+        return None
 
     def _find_definition(
         self,
@@ -447,24 +518,89 @@ class SymbolFinder:
         Args:
             definition_file: Arquivo onde o símbolo é definido
             dependent_files: Arquivos que dependem do definition_file
-            qualified_name: "ClassName" ou "ClassName.attribute"
+            qualified_name: Nome qualificado com prefixo:
+                - "class:ClassName"
+                - "class:ClassName.attribute"
+                - "function:function_name"
 
         Returns:
             SymbolUsages com todas as referências encontradas
         """
-        class_name, attr_name = self._parse_qualified_name(qualified_name)
+        symbol_type, name, attr_name = self._parse_qualified_name(qualified_name)
 
-        # 1. Encontrar definição no arquivo fonte
-        definition = self._find_definition(definition_file, class_name, attr_name)
-
-        # 2. Buscar referências nos arquivos dependentes
-        references = []
-        for file_path in dependent_files:
-            refs = self._find_references_in_file(file_path, class_name, attr_name, qualified_name)
-            references.extend(refs)
+        if symbol_type == "function":
+            # Buscar chamadas de função
+            definition = self._find_function_definition(definition_file, name)
+            references = []
+            for file_path in dependent_files:
+                refs = self._find_function_calls_in_file(file_path, name)
+                references.extend(refs)
+        else:
+            # Buscar referências de classe/atributo
+            definition = self._find_definition(definition_file, name, attr_name)
+            references = []
+            for file_path in dependent_files:
+                refs = self._find_references_in_file(file_path, name, attr_name, qualified_name)
+                references.extend(refs)
 
         return SymbolUsages(
             symbol_name=qualified_name,
             definition_location=definition,
             references=references
         )
+
+    def _find_function_calls_in_file(
+        self,
+        file_path: Path,
+        function_name: str
+    ) -> List[SymbolReference]:
+        """
+        Encontra chamadas a uma função em um arquivo.
+
+        Captura tanto chamadas diretas (validate(...)) quanto
+        chamadas de método (obj.validate(...)).
+        """
+        code = self._read_file(file_path)
+        if code is None:
+            return []
+
+        parser = self._get_parser()
+        tree = parser.parse(code)
+        root_node = tree.root_node
+
+        references = []
+
+        # Query baseada no tags.scm: captura chamadas diretas e de método
+        query_str = """
+            (call
+                function: [
+                    (identifier) @func.name
+                    (attribute
+                        attribute: (identifier) @func.name)
+                ]) @reference.call
+        """
+
+        for match in self._run_query(query_str, root_node):
+            captures = match[1]
+            func_nodes = captures.get("func.name", [])
+            call_nodes = captures.get("reference.call", [])
+
+            for func_node in func_nodes:
+                name = code[func_node.start_byte:func_node.end_byte].decode("utf-8")
+                if name == function_name:
+                    # Usar o nó da chamada completa para contexto
+                    call_node = call_nodes[0] if call_nodes else func_node
+                    location = SymbolLocation(
+                        file_path=file_path,
+                        line=call_node.start_point[0] + 1,
+                        column=call_node.start_point[1],
+                        end_column=call_node.end_point[1],
+                        context_line=self._get_context_line(code, call_node.start_point[0])
+                    )
+                    references.append(SymbolReference(
+                        location=location,
+                        reference_type="function_call",
+                        symbol_name=function_name
+                    ))
+
+        return references
