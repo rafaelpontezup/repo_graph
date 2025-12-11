@@ -4,3 +4,5 @@ tree_sitter
 tree-sitter-python
 tree-sitter-java
 coverage
+pytest
+pytest-cov

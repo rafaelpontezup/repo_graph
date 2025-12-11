@@ -371,27 +371,6 @@ class SymbolFinder:
 
         return references
 
-    def _file_imports_class(self, root_node, code: bytes, class_name: str) -> bool:
-        """Verifica se o arquivo importa a classe especificada."""
-        import_query = """
-            (import_from_statement
-              (import_list
-                [
-                  (dotted_name (identifier) @import.name)
-                  (import_alias name: (identifier) @import.name)
-                ]
-              )
-            )
-        """
-
-        for match in self._run_query(import_query, root_node):
-            for node in match[1].get("import.name", []):
-                name = code[node.start_byte:node.end_byte].decode("utf-8")
-                if name == class_name:
-                    return True
-
-        return False
-
     def _find_references_in_file(
         self,
         file_path: Path,
@@ -407,11 +386,6 @@ class SymbolFinder:
         parser = self._get_parser()
         tree = parser.parse(code)
         root_node = tree.root_node
-
-        # Verificar se o arquivo importa a classe
-        # TODO: Entendo que não precisamos verificar pois todos os arquivos informados em FileUsages.file_usages com certeza dependem do  FileUsages.source_file
-        # if not self._file_imports_class(root_node, code, class_name):
-        #     return []
 
         references = []
 
