@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import override
 
 from repo_graph.repo import FileUsages
+from repo_graph.symbol_finder import SymbolUsages
 
 
 class FindSimbolsTest(unittest.TestCase):
