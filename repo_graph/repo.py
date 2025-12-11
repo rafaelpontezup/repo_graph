@@ -24,7 +24,6 @@ class FileUsages:
     def __post_init__(self):
         assert self.source_file, "source_file must not be empty"
         assert self.source_file.is_file(), "source_file must be a file"
-        assert self.file_usages, "file_usages must not be empty"
 
 
     def find_symbol_references(self, qualified_name: str) -> SymbolUsages:
