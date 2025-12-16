@@ -123,31 +123,30 @@ main.py:
 │from utils import format_name
 │from models import User
 │
-█def run():
+│def run():
 │    user = User("Alice")
 │    print(format_name(user.name))
 
 utils.py:
 (Rank value: 0.2297)
 
-█def format_name(name):
+│def format_name(name):
 │    return name.upper()
 │
-█def validate_email(email):
+│def validate_email(email):
 ⋮
 
 models.py:
 (Rank value: 0.2292)
 
-█class User:
+│class User:
 │    def __init__(self, name):
 │        self.name = name
 ⋮
 ```
 
 **Simbolos no output:**
-- `│` linhas de contexto
-- `█` linhas de interesse (definicoes)
+- `│` linhas de codigo (contexto e definicoes)
 - `⋮` codigo omitido
 
 ### Por que `main.py` tem o maior rank?
