@@ -684,7 +684,8 @@ class TestRealRepository:
     def test_scan_with_mentioned_idents(self):
         """Testa scan com identificadores mencionados."""
         import os
-        repo_root = Path(__file__).parent.parent.parent / "repo_graph" / "repo_map"
+        import inspect
+        repo_root = Path(inspect.getfile(SimpleRepoMap)).parent
 
         mapper = SimpleRepoMap(root=str(repo_root), verbose=False)
         output, report = mapper.get_repo_map(
@@ -697,7 +698,8 @@ class TestRealRepository:
     def test_scan_specific_file(self):
         """Testa scan de arquivo específico do repo."""
         import os
-        repo_root = Path(__file__).parent.parent.parent / "repo_graph" / "repo_map"
+        import inspect
+        repo_root = Path(inspect.getfile(SimpleRepoMap)).parent
 
         mapper = SimpleRepoMap(root=str(repo_root), verbose=False)
         output, report = mapper.get_repo_map(
