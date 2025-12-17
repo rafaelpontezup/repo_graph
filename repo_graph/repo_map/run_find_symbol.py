@@ -24,7 +24,7 @@ def main():
         source_file=Path("service/order_service.py")  # arquivo de origem
     )
 
-    output_file.write_text(result.render(include_references=True))
+    output_file.write_text(result.render(include_references=True, show_header=True))
 
 
 if __name__ == "__main__":

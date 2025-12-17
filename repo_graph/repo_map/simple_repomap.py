@@ -107,14 +107,17 @@ class SymbolNavigation:
                 output_parts.append(f"References  : {len(self.references)}")
             output_parts.append("")
 
-        output_parts.append(f"ℹ️ Definitions ({len(self.definitions)})")
-        output_parts.append("-" * 40)
-
-        # Renderizar definições
+        # Agrupar definições por arquivo
         defs_by_file: Dict[str, List[int]] = defaultdict(list)
         for defn in self.definitions:
             defs_by_file[defn.file].append(defn.line)
 
+        # Header de definições com contagem de arquivos
+        file_word = "file" if len(defs_by_file) == 1 else "files"
+        output_parts.append(f"ℹ️ Definitions ({len(self.definitions)} total, {len(defs_by_file)} {file_word})")
+        output_parts.append("-" * 40)
+
+        # Renderizar definições
         for def_file, lines in defs_by_file.items():
             if def_file in self._files:
                 code = self._files[def_file]
@@ -138,14 +141,15 @@ class SymbolNavigation:
 
         # Renderizar referências (se solicitado)
         if include_references and self.references:
-            output_parts.append("")
-            output_parts.append(f"ℹ️ References ({len(self.references)})")
-            output_parts.append("-" * 40)
-
             # Agrupar referências por arquivo
             refs_by_file: Dict[str, List[int]] = defaultdict(list)
             for ref in self.references:
                 refs_by_file[ref.file].append(ref.line)
+
+            # Header de referências com contagem de arquivos
+            ref_file_word = "file" if len(refs_by_file) == 1 else "files"
+            output_parts.append(f"ℹ️ References ({len(self.references)} total, {len(refs_by_file)} {ref_file_word})")
+            output_parts.append("-" * 40)
 
             for ref_file, lines in refs_by_file.items():
                 if ref_file in self._files:
@@ -274,7 +278,6 @@ class MultiSymbolNavigation:
 
         # Renderizar definições (agrupadas por arquivo)
         if defs_by_file:
-            output_parts.append("")
             output_parts.append(f"ℹ️ Definitions ({total_defs} total, {len(defs_by_file)} files)")
             output_parts.append("=" * 40)
 

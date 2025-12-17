@@ -32,7 +32,7 @@ def main():
     )
 
     # Gerar output
-    output_file.write_text(result.render(include_references=True))
+    output_file.write_text(result.render(include_references=True, show_header=True))
 
 
 if __name__ == "__main__":
