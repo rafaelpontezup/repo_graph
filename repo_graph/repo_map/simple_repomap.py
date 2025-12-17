@@ -12,6 +12,7 @@ Para entender o algoritmo completo, consulte EXPLAIN.md
 
 from collections import defaultdict, namedtuple
 from dataclasses import dataclass, field
+from os import PathLike
 from pathlib import Path
 from typing import List, Dict, Set, Tuple, Optional
 import os
@@ -528,7 +529,7 @@ class SimpleRepoMap:
 
     def __init__(
         self,
-        root: str = ".",
+        root: str | PathLike[str] = ".",
         max_map_tokens: int = 8192,
         verbose: bool = False,
     ):
