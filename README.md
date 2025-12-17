@@ -30,7 +30,7 @@ python -m repo_graph.main_cli /path/to/repo --show-files path/to/directory
 #### Testing CLI with sample files
 
 ```bash
-python -m repo_graph.main_cli samples/happy-path --show-files . > output/repo-$(date +%Y%m%d%H%M%S).out
+python -m repo_graph.main_cli samples/happy-path --show-files . > output/repograph_$(date +%Y%m%d-%H%M%S).out
 ```
 
 ### Programmatic API
