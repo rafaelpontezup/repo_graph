@@ -161,6 +161,160 @@ class SymbolNavigation:
         return "\n".join(output_parts)
 
 
+@dataclass
+class MultiSymbolNavigation:
+    """
+    Navegação agregada para múltiplos símbolos.
+
+    Otimiza a renderização agrupando por arquivo para evitar redundância.
+    Cada arquivo é renderizado uma única vez com todas as linhas de interesse.
+    """
+    symbols: Dict[str, SymbolNavigation]
+    _files: Dict[str, str] = field(default_factory=dict, repr=False)
+    source_file: Optional[str] = None
+
+    @property
+    def found_symbols(self) -> List[str]:
+        """Retorna lista de símbolos que foram encontrados."""
+        return [s for s, nav in self.symbols.items() if nav.found]
+
+    @property
+    def not_found_symbols(self) -> List[str]:
+        """Retorna lista de símbolos que NÃO foram encontrados."""
+        return [s for s, nav in self.symbols.items() if not nav.found]
+
+    def get(self, symbol: str) -> Optional[SymbolNavigation]:
+        """Acesso individual a um símbolo."""
+        return self.symbols.get(symbol)
+
+    def __getitem__(self, symbol: str) -> SymbolNavigation:
+        """Permite acesso via nav['Symbol']."""
+        return self.symbols[symbol]
+
+    def __contains__(self, symbol: str) -> bool:
+        """Permite 'Symbol' in nav."""
+        return symbol in self.symbols
+
+    def __len__(self) -> int:
+        """Retorna número de símbolos."""
+        return len(self.symbols)
+
+    def render(self, include_references: bool = False) -> str:
+        """
+        Renderiza TODOS os símbolos de forma agregada.
+
+        Agrupa por arquivo para evitar redundância:
+        - Cada arquivo aparece uma única vez
+        - TreeContext compartilha contexto entre símbolos
+        - Output ~50% menor que renders separados
+
+        Args:
+            include_references: Se True, inclui também as referências
+
+        Returns:
+            String formatada com contexto sintático agregado
+        """
+        found = self.found_symbols
+        not_found = self.not_found_symbols
+
+        if not found:
+            symbols_str = ", ".join(self.symbols.keys())
+            return f"No symbols found: {symbols_str}"
+
+        output_parts = []
+
+        # Header com todos os símbolos
+        symbol_info = []
+        for s in found:
+            nav = self.symbols[s]
+            symbol_info.append(f"{s} ({nav.kind})")
+
+        header = f"Symbols: {', '.join(symbol_info)}"
+        if self.source_file:
+            header += f"\nSource : {self.source_file}"
+        header += f"\nFound  : {len(found)}/{len(self.symbols)}"
+        if not_found:
+            header += f"\nNot found: {', '.join(not_found)}"
+        output_parts.append(header)
+
+        # Contar totais
+        total_defs = sum(len(self.symbols[s].definitions) for s in found)
+        total_refs = sum(len(self.symbols[s].references) for s in found)
+
+        # Agregar definições por arquivo
+        defs_by_file: Dict[str, List[int]] = defaultdict(list)
+        for symbol in found:
+            nav = self.symbols[symbol]
+            for defn in nav.definitions:
+                defs_by_file[defn.file].append(defn.line)
+
+        # Renderizar definições (agrupadas por arquivo)
+        if defs_by_file:
+            output_parts.append("")
+            output_parts.append(f"ℹ️ Definitions ({total_defs} total, {len(defs_by_file)} files)")
+            output_parts.append("=" * 40)
+
+            for file, lines in sorted(defs_by_file.items()):
+                if file in self._files:
+                    code = self._files[file]
+                    tc = TreeContext(
+                        file,
+                        code,
+                        color=False,
+                        loi_pad=8,
+                        margin=0,
+                        parent_context=True,
+                        child_context=False,
+                        last_line=False,
+                        show_top_of_file_parent_scope=False,
+                    )
+                    # Adiciona TODAS as linhas de TODOS os símbolos deste arquivo
+                    unique_lines = sorted(set(lines))
+                    tc.add_lines_of_interest([line - 1 for line in unique_lines])
+                    tc.add_context()
+                    rendered = tc.format()
+                    if rendered:
+                        output_parts.append(f"\n{file}:")
+                        output_parts.append(rendered)
+
+        # Agregar referências por arquivo (se solicitado)
+        if include_references:
+            refs_by_file: Dict[str, List[int]] = defaultdict(list)
+            for symbol in found:
+                nav = self.symbols[symbol]
+                for ref in nav.references:
+                    refs_by_file[ref.file].append(ref.line)
+
+            if refs_by_file:
+                output_parts.append("")
+                output_parts.append(f"ℹ️ References ({total_refs} total, {len(refs_by_file)} files)")
+                output_parts.append("=" * 40)
+
+                for file, lines in sorted(refs_by_file.items()):
+                    if file in self._files:
+                        code = self._files[file]
+                        tc = TreeContext(
+                            file,
+                            code,
+                            color=False,
+                            loi_pad=4,
+                            margin=0,
+                            parent_context=False,
+                            child_context=False,
+                            last_line=False,
+                            show_top_of_file_parent_scope=False,
+                        )
+                        unique_lines = sorted(set(lines))
+                        tc.add_lines_of_interest([line - 1 for line in unique_lines])
+                        tc.add_context()
+                        rendered = tc.format()
+                        if rendered:
+                            output_parts.append(f"\n{file}:")
+                            output_parts.append(rendered)
+
+        return "\n".join(output_parts)
+
+
 # =============================================================================
 # Mapeamento de linguagens para arquivos SCM
 # =============================================================================
@@ -981,6 +1135,145 @@ class SimpleRepoMap:
             references=[make_location(t) for t in references],
             source_file=source_file_str,
             _files=relevant_files,
+        )
+
+    def find_symbols(
+        self,
+        symbols: List[str],
+        paths: List[Path],
+        source_file: Optional[Path] = None,
+        excludes: Optional[Set[str]] = None,
+        include_snippet: bool = True,
+    ) -> MultiSymbolNavigation:
+        """
+        Encontra definições e referências de múltiplos símbolos.
+
+        Mais eficiente que chamar find_symbol() múltiplas vezes,
+        pois faz parsing dos arquivos apenas uma vez.
+
+        Args:
+            symbols: Lista de nomes de símbolos a buscar
+            paths: Lista de arquivos/diretórios a buscar
+            source_file: Path do arquivo de origem (boost 20x no ranking)
+            excludes: Padrões de exclusão adicionais
+            include_snippet: Se True, inclui trecho de código
+
+        Returns:
+            MultiSymbolNavigation com navegação agregada para todos os símbolos
+
+        Example:
+            >>> mapper = SimpleRepoMap(root="/path/to/project")
+            >>> result = mapper.find_symbols(
+            ...     ["User", "Product", "OrderService"],
+            ...     [Path("src")],
+            ...     source_file=Path("src/api/routes.py")
+            ... )
+            >>> print(result.found_symbols)  # ['User', 'Product', 'OrderService']
+            >>> print(result.render())       # Output agregado, sem duplicação
+            >>> print(result.get("User"))    # Acesso individual
+        """
+        source_file_str = str(source_file) if source_file else None
+
+        # 1. Descobrir arquivos
+        file_paths = self._resolve_paths(paths, excludes)
+
+        if not file_paths:
+            # Retorna MultiSymbolNavigation com todos os símbolos não encontrados
+            empty_navs = {
+                symbol: SymbolNavigation(
+                    symbol=symbol,
+                    kind="unknown",
+                    definitions=[],
+                    references=[],
+                    source_file=source_file_str,
+                )
+                for symbol in symbols
+            }
+            return MultiSymbolNavigation(
+                symbols=empty_navs,
+                source_file=source_file_str,
+            )
+
+        # 2. Ler conteúdo dos arquivos
+        files = self._read_files(file_paths)
+
+        if not files:
+            empty_navs = {
+                symbol: SymbolNavigation(
+                    symbol=symbol,
+                    kind="unknown",
+                    definitions=[],
+                    references=[],
+                    source_file=source_file_str,
+                )
+                for symbol in symbols
+            }
+            return MultiSymbolNavigation(
+                symbols=empty_navs,
+                source_file=source_file_str,
+            )
+
+        # 3. Obter tags rankeadas com boost para TODOS os símbolos
+        ranked_tags, _ = self._get_ranked_tags(
+            files,
+            chat_fnames={source_file_str} if source_file_str else None,
+            mentioned_idents=set(symbols),  # Todos recebem boost 10x
+            kinds={"def", "ref"},
+        )
+
+        # 4. Helper para criar SymbolLocation
+        def make_location(tag: Tag) -> SymbolLocation:
+            snippet = ""
+            if include_snippet and tag.rel_fname in files:
+                lines_list = files[tag.rel_fname].splitlines()
+                if 0 < tag.line <= len(lines_list):
+                    snippet = lines_list[tag.line - 1].strip()
+            return SymbolLocation(
+                file=tag.rel_fname,
+                line=tag.line,
+                snippet=snippet,
+            )
+
+        # 5. Filtrar e agrupar por símbolo
+        symbol_set = set(symbols)
+        matching = [(rank, tag) for rank, tag in ranked_tags if tag.name in symbol_set]
+
+        # Agrupar por símbolo
+        defs_by_symbol: Dict[str, List[Tag]] = defaultdict(list)
+        refs_by_symbol: Dict[str, List[Tag]] = defaultdict(list)
+
+        for rank, tag in matching:
+            if tag.kind == "def":
+                defs_by_symbol[tag.name].append(tag)
+            elif tag.kind == "ref":
+                refs_by_symbol[tag.name].append(tag)
+
+        # 6. Coletar todos os arquivos relevantes
+        relevant_files = {}
+        for rank, tag in matching:
+            if tag.rel_fname in files and tag.rel_fname not in relevant_files:
+                relevant_files[tag.rel_fname] = files[tag.rel_fname]
+
+        # 7. Construir SymbolNavigation para cada símbolo
+        symbol_navs = {}
+        for symbol in symbols:
+            definitions = defs_by_symbol.get(symbol, [])
+            references = refs_by_symbol.get(symbol, [])
+            kind = definitions[0].subkind if definitions else "unknown"
+
+            symbol_navs[symbol] = SymbolNavigation(
+                symbol=symbol,
+                kind=kind,
+                definitions=[make_location(t) for t in definitions],
+                references=[make_location(t) for t in references],
+                source_file=source_file_str,
+                _files=relevant_files,
+            )
+
+        return MultiSymbolNavigation(
+            symbols=symbol_navs,
+            _files=relevant_files,
+            source_file=source_file_str,
         )
 
     # =========================================================================

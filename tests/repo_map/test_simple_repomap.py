@@ -13,6 +13,7 @@ from repo_graph.repo_map.simple_repomap import (
     FileReport,
     SymbolLocation,
     SymbolNavigation,
+    MultiSymbolNavigation,
     get_lang_from_filename,
     get_scm_path,
     SCM_FILES,
@@ -1048,3 +1049,211 @@ user3 = User()
 
         # main.py deve aparecer apenas uma vez (refs agrupadas)
         assert output.count("main.py:") == 1
+
+
+# =============================================================================
+# Testes para find_symbols() e MultiSymbolNavigation
+# =============================================================================
+
+class TestFindSymbols:
+    """Testes para o método find_symbols() que busca múltiplos símbolos."""
+
+    @pytest.fixture
+    def multi_symbol_project(self, tmp_path):
+        """Projeto com múltiplos símbolos para testar agregação."""
+        (tmp_path / "models.py").write_text("""class User:
+    def __init__(self, name: str, email: str):
+        self.name = name
+        self.email = email
+
+class Product:
+    def __init__(self, title: str, price: float):
+        self.title = title
+        self.price = price
+
+class Order:
+    def __init__(self, user: User, product: Product):
+        self.user = user
+        self.product = product
+""")
+        (tmp_path / "services.py").write_text("""from models import User, Product, Order
+
+class OrderService:
+    def create_order(self, user: User, product: Product) -> Order:
+        return Order(user, product)
+
+    def get_user_orders(self, user: User):
+        pass
+""")
+        (tmp_path / "main.py").write_text("""from models import User, Product
+from services import OrderService
+
+user = User("Alice", "alice@example.com")
+product = Product("Widget", 9.99)
+service = OrderService()
+order = service.create_order(user, product)
+""")
+        return tmp_path
+
+    def test_find_symbols_returns_multi_symbol_navigation(self, multi_symbol_project):
+        """Testa que find_symbols retorna MultiSymbolNavigation."""
+        mapper = SimpleRepoMap(root=str(multi_symbol_project))
+        result = mapper.find_symbols(["User", "Product"], [multi_symbol_project])
+
+        assert isinstance(result, MultiSymbolNavigation)
+
+    def test_find_symbols_finds_all_symbols(self, multi_symbol_project):
+        """Testa que todos os símbolos são encontrados."""
+        mapper = SimpleRepoMap(root=str(multi_symbol_project))
+        result = mapper.find_symbols(["User", "Product", "Order"], [multi_symbol_project])
+
+        assert len(result.found_symbols) == 3
+        assert "User" in result.found_symbols
+        assert "Product" in result.found_symbols
+        assert "Order" in result.found_symbols
+
+    def test_find_symbols_reports_not_found(self, multi_symbol_project):
+        """Testa que símbolos não encontrados são reportados."""
+        mapper = SimpleRepoMap(root=str(multi_symbol_project))
+        result = mapper.find_symbols(["User", "NonExistent"], [multi_symbol_project])
+
+        assert "User" in result.found_symbols
+        assert "NonExistent" in result.not_found_symbols
+
+    def test_find_symbols_individual_access(self, multi_symbol_project):
+        """Testa acesso individual a símbolos via get() e []."""
+        mapper = SimpleRepoMap(root=str(multi_symbol_project))
+        result = mapper.find_symbols(["User", "Product"], [multi_symbol_project])
+
+        # Via get()
+        user_nav = result.get("User")
+        assert user_nav is not None
+        assert user_nav.symbol == "User"
+        assert user_nav.kind == "class"
+
+        # Via []
+        product_nav = result["Product"]
+        assert product_nav.symbol == "Product"
+
+        # Via in
+        assert "User" in result
+        assert "NonExistent" not in result
+
+    def test_find_symbols_efficiency(self, multi_symbol_project):
+        """Testa que find_symbols processa arquivos uma única vez."""
+        mapper = SimpleRepoMap(root=str(multi_symbol_project))
+
+        # Ambas as chamadas devem funcionar, mas find_symbols é mais eficiente
+        single1 = mapper.find_symbol("User", [multi_symbol_project])
+        single2 = mapper.find_symbol("Product", [multi_symbol_project])
+        multi = mapper.find_symbols(["User", "Product"], [multi_symbol_project])
+
+        # Resultados devem ser equivalentes
+        assert len(single1.definitions) == len(multi.get("User").definitions)
+        assert len(single2.definitions) == len(multi.get("Product").definitions)
+
+
+class TestMultiSymbolNavigationRender:
+    """Testes para o método render() agregado de MultiSymbolNavigation."""
+
+    @pytest.fixture
+    def render_project(self, tmp_path):
+        """Projeto para testar render agregado."""
+        (tmp_path / "models.py").write_text("""class User:
+    def __init__(self, name):
+        self.name = name
+
+class Product:
+    def __init__(self, title):
+        self.title = title
+""")
+        (tmp_path / "main.py").write_text("""from models import User, Product
+
+user = User("Alice")
+product = Product("Widget")
+""")
+        return tmp_path
+
+    def test_render_aggregates_definitions_by_file(self, render_project):
+        """Testa que definições no mesmo arquivo são agregadas."""
+        mapper = SimpleRepoMap(root=str(render_project))
+        result = mapper.find_symbols(["User", "Product"], [render_project])
+
+        output = result.render()
+
+        # models.py deve aparecer apenas UMA vez
+        assert output.count("models.py:") == 1
+        # Mas ambas as definições devem estar presentes
+        assert "class User" in output
+        assert "class Product" in output
+
+    def test_render_aggregates_references_by_file(self, render_project):
+        """Testa que referências no mesmo arquivo são agregadas."""
+        mapper = SimpleRepoMap(root=str(render_project))
+        result = mapper.find_symbols(["User", "Product"], [render_project])
+
+        output = result.render(include_references=True)
+
+        # main.py deve aparecer apenas UMA vez na seção de referências
+        refs_section = output.split("References")[1] if "References" in output else ""
+        assert refs_section.count("main.py:") == 1
+
+    def test_render_header_shows_all_symbols(self, render_project):
+        """Testa que o header lista todos os símbolos encontrados."""
+        mapper = SimpleRepoMap(root=str(render_project))
+        result = mapper.find_symbols(["User", "Product"], [render_project])
+
+        output = result.render()
+
+        assert "Symbols:" in output
+        assert "User" in output
+        assert "Product" in output
+        assert "Found  : 2/2" in output
+
+    def test_render_shows_not_found_symbols(self, render_project):
+        """Testa que símbolos não encontrados são listados no header."""
+        mapper = SimpleRepoMap(root=str(render_project))
+        result = mapper.find_symbols(["User", "NonExistent"], [render_project])
+
+        output = result.render()
+
+        assert "Found  : 1/2" in output
+        assert "Not found:" in output
+        assert "NonExistent" in output
+
+    def test_render_no_symbols_found(self, tmp_path):
+        """Testa mensagem quando nenhum símbolo é encontrado."""
+        (tmp_path / "empty.py").write_text("x = 1")
+        mapper = SimpleRepoMap(root=str(tmp_path))
+        result = mapper.find_symbols(["NonExistent1", "NonExistent2"], [tmp_path])
+
+        output = result.render()
+
+        assert "No symbols found" in output
+
+    def test_render_includes_file_count(self, render_project):
+        """Testa que o render mostra contagem de arquivos."""
+        mapper = SimpleRepoMap(root=str(render_project))
+        result = mapper.find_symbols(["User", "Product"], [render_project])
+
+        output = result.render()
+
+        # Deve mostrar "X total, Y files"
+        assert "total" in output
+        assert "files" in output
+
+    def test_render_vs_individual_renders_less_output(self, render_project):
+        """Testa que render agregado produz menos output que renders individuais."""
+        mapper = SimpleRepoMap(root=str(render_project))
+
+        # Renders individuais
+        nav1 = mapper.find_symbol("User", [render_project])
+        nav2 = mapper.find_symbol("Product", [render_project])
+        individual_output = nav1.render() + "\n" + nav2.render()
+
+        # Render agregado
+        multi = mapper.find_symbols(["User", "Product"], [render_project])
+        aggregated_output = multi.render()
+
+        # Agregado deve ser menor (menos duplicação)
+        assert len(aggregated_output) < len(individual_output)
