@@ -279,7 +279,7 @@ class MultiSymbolNavigation:
         # Renderizar definições (agrupadas por arquivo)
         if defs_by_file:
             output_parts.append(f"ℹ️ Definitions ({total_defs} total, {len(defs_by_file)} files)")
-            output_parts.append("=" * 40)
+            output_parts.append("-" * 40)
 
             for file, lines in sorted(defs_by_file.items()):
                 if file in self._files:
@@ -315,7 +315,7 @@ class MultiSymbolNavigation:
             if refs_by_file:
                 output_parts.append("")
                 output_parts.append(f"ℹ️ References ({total_refs} total, {len(refs_by_file)} files)")
-                output_parts.append("=" * 40)
+                output_parts.append("-" * 40)
 
                 for file, lines in sorted(refs_by_file.items()):
                     if file in self._files:
