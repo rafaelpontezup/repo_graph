@@ -67,12 +67,17 @@ class SymbolNavigation:
         """Retorna True se o símbolo foi encontrado (definição ou referência)."""
         return len(self.definitions) > 0 or len(self.references) > 0
 
-    def render(self, include_references: bool = False) -> str:
+    def render(
+        self,
+        include_references: bool = False,
+        show_header: bool = True,
+    ) -> str:
         """
         Renderiza o símbolo com contexto sintático usando TreeContext.
 
         Args:
             include_references: Se True, inclui também as referências
+            show_header: Se True (default), exibe cabeçalho com metadados
 
         Returns:
             String formatada com contexto sintático
@@ -82,6 +87,7 @@ class SymbolNavigation:
             >>> if nav.found:
             ...     print(nav.render())
             ...     print(nav.render(include_references=True))
+            ...     print(nav.render(show_header=False))
         """
         if not self.found:
             return f"Symbol '{self.symbol}' not found."
@@ -89,14 +95,18 @@ class SymbolNavigation:
         output_parts = []
 
         # Header com informação do símbolo
-        header = f"Symbol     : {self.symbol} ({self.kind})"
-        if self.source_file:
-            header += f"\nSource file: {self.source_file}"
-        header += f"\nDefinitions: {len(self.definitions)}"
-        if include_references:
-            header += f"\nReferences : {len(self.references)}"
-        output_parts.append(header)
-        output_parts.append("")
+        if show_header:
+            output_parts.append("ℹ️ Summary")
+            output_parts.append("=" * 40)
+            output_parts.append("")
+            output_parts.append(f"Symbol      : {self.symbol} ({self.kind})")
+            if self.source_file:
+                output_parts.append(f"Source file : {self.source_file}")
+            output_parts.append(f"Definitions : {len(self.definitions)}")
+            if include_references:
+                output_parts.append(f"References  : {len(self.references)}")
+            output_parts.append("")
+
         output_parts.append(f"ℹ️ Definitions ({len(self.definitions)})")
         output_parts.append("-" * 40)
 
@@ -199,7 +209,11 @@ class MultiSymbolNavigation:
         """Retorna número de símbolos."""
         return len(self.symbols)
 
-    def render(self, include_references: bool = False) -> str:
+    def render(
+        self,
+        include_references: bool = False,
+        show_header: bool = True,
+    ) -> str:
         """
         Renderiza TODOS os símbolos de forma agregada.
 
@@ -210,6 +224,7 @@ class MultiSymbolNavigation:
 
         Args:
             include_references: Se True, inclui também as referências
+            show_header: Se True (default), exibe cabeçalho com metadados
 
         Returns:
             String formatada com contexto sintático agregado
@@ -224,18 +239,27 @@ class MultiSymbolNavigation:
         output_parts = []
 
         # Header com todos os símbolos
-        symbol_info = []
-        for s in found:
-            nav = self.symbols[s]
-            symbol_info.append(f"{s} ({nav.kind})")
+        if show_header:
+            total = len(self.symbols)
+            output_parts.append("ℹ️ Summary")
+            output_parts.append("=" * 40)
+            output_parts.append("")
+            if self.source_file:
+                output_parts.append(f"Source file : {self.source_file}")
 
-        header = f"Symbols: {', '.join(symbol_info)}"
-        if self.source_file:
-            header += f"\nSource : {self.source_file}"
-        header += f"\nFound  : {len(found)}/{len(self.symbols)}"
-        if not_found:
-            header += f"\nNot found: {', '.join(not_found)}"
-        output_parts.append(header)
+            # Lista de símbolos encontrados
+            output_parts.append(f"Symbols found ({len(found)}/{total}):")
+            for s in found:
+                nav = self.symbols[s]
+                output_parts.append(f"  • {s} ({nav.kind})")
+
+            # Lista de símbolos não encontrados
+            if not_found:
+                output_parts.append(f"Symbols not found ({len(not_found)}/{total}):")
+                for s in not_found:
+                    output_parts.append(f"  • {s}")
+
+            output_parts.append("")
 
         # Contar totais
         total_defs = sum(len(self.symbols[s].definitions) for s in found)

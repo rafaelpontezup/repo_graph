@@ -992,7 +992,7 @@ user = User("Alice")  # line 10 - reference
 
         output = result.render(include_references=True)
 
-        assert "References :" in output
+        assert "References  :" in output
         assert "main.py" in output
 
     def test_render_no_parent_context(self, tmp_path):
@@ -1030,10 +1030,10 @@ user = User("Alice")  # line 10 - reference
 
         output = result.render(include_references=True)
 
-        assert "Symbol     : User" in output
-        assert "Definitions:" in output
+        assert "Symbol      : User" in output
+        assert "Definitions :" in output
         assert "models.py" in output
-        assert "References :" in output
+        assert "References  :" in output
 
     def test_render_groups_references_by_file(self, tmp_path):
         """Testa que múltiplas refs no mesmo arquivo são agrupadas."""
@@ -1205,10 +1205,9 @@ product = Product("Widget")
 
         output = result.render()
 
-        assert "Symbols:" in output
+        assert "Symbols found (2/2):" in output
         assert "User" in output
         assert "Product" in output
-        assert "Found  : 2/2" in output
 
     def test_render_shows_not_found_symbols(self, render_project):
         """Testa que símbolos não encontrados são listados no header."""
@@ -1217,8 +1216,8 @@ product = Product("Widget")
 
         output = result.render()
 
-        assert "Found  : 1/2" in output
-        assert "Not found:" in output
+        assert "Symbols found (1/2):" in output
+        assert "Symbols not found (1/2):" in output
         assert "NonExistent" in output
 
     def test_render_no_symbols_found(self, tmp_path):
