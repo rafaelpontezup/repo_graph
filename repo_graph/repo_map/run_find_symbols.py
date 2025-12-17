@@ -22,7 +22,13 @@ def main():
     output_file = output_dir / f"find_symbols_{timestamp}.out"
 
     # Buscar múltiplos símbolos de uma vez
-    symbols = ["User", "Product", "Order", "total_amount", "stackspot_ai"]
+    symbols = [
+        "User",
+        "Product",
+        "Order",
+        "total_amount",
+        "stackspot_ai"    # this symbol does not exist
+    ]
 
     mapper = SimpleRepoMap(root=str(root_dir), verbose=False)
     result = mapper.find_symbols(
