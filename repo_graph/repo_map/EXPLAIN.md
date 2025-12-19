@@ -37,7 +37,7 @@ repo_map, report = mapper.get_repo_map(
     max_tokens=4096,                       # Limite de tokens
 )
 
-# Metodo 2: Encontrar simbolo (similar ao GitHub Code Navigation)
+# Metodo 2: Encontrar simbolo unico (similar ao GitHub Code Navigation)
 nav = mapper.find_symbol(
     symbol="User",                         # Nome do simbolo a buscar
     paths=[Path("src")],                   # Onde buscar
@@ -46,6 +46,18 @@ nav = mapper.find_symbol(
 if nav.found:
     print(nav.render())                    # Renderiza com contexto sintatico
     print(nav.render(include_references=True))  # Inclui referencias
+    print(nav.render(show_header=False))   # Sem cabecalho de metadados
+
+# Metodo 3: Encontrar multiplos simbolos (mais eficiente que multiplas chamadas)
+multi_nav = mapper.find_symbols(
+    symbols=["User", "Product", "OrderService"],  # Lista de simbolos
+    paths=[Path("src")],
+    source_file=Path("src/api/routes.py"),
+)
+print(multi_nav.found_symbols)             # Simbolos encontrados
+print(multi_nav.not_found_symbols)         # Simbolos nao encontrados
+print(multi_nav.render())                  # Output agregado, sem duplicacao
+print(multi_nav.get("User"))               # Acesso individual a um simbolo
 ```
 
 **Por que `List[Path]` em vez de strings?**
@@ -386,7 +398,33 @@ class SymbolNavigation:
 
 **Metodos:**
 - `found` (property): Retorna `True` se encontrou definicao ou referencia
-- `render(include_references=False)`: Renderiza com contexto sintatico usando TreeContext
+- `render(include_references=False, show_header=True)`: Renderiza com contexto sintatico usando TreeContext
+
+### MultiSymbolNavigation (dataclass)
+
+```python
+@dataclass
+class MultiSymbolNavigation:
+    symbols: Dict[str, SymbolNavigation]  # Mapa de simbolo -> navegacao
+    _files: Dict[str, str]                # Cache compartilhado dos arquivos
+    source_file: Optional[str]            # Arquivo de origem da busca
+```
+
+**Properties:**
+- `found_symbols`: Lista de simbolos que foram encontrados
+- `not_found_symbols`: Lista de simbolos que NAO foram encontrados
+
+**Metodos:**
+- `get(symbol)`: Acesso individual a um simbolo (retorna `Optional[SymbolNavigation]`)
+- `__getitem__(symbol)`: Permite acesso via `nav["User"]`
+- `__contains__(symbol)`: Permite `"User" in nav`
+- `__len__()`: Retorna numero de simbolos
+- `render(include_references=False, show_header=True)`: Renderiza TODOS os simbolos de forma agregada
+
+**Por que MultiSymbolNavigation?**
+- Eficiencia: parsing dos arquivos feito uma unica vez para todos os simbolos
+- Output compacto: cada arquivo aparece uma unica vez (TreeContext compartilha contexto)
+- Resultado ~50% menor que renders separados para multiplos simbolos
 
 ---
 
@@ -549,11 +587,11 @@ def _to_tree_truncated_by_tokens(self, ranked_tags, files, max_tokens):
 
 ---
 
-## Navegacao de Simbolos (find_symbol)
+## Navegacao de Simbolos (find_symbol e find_symbols)
 
-> **Motivacao:** Desenvolvedores frequentemente precisam saber "onde este simbolo e definido?" e "onde ele e usado?". Similar ao GitHub Code Navigation, o metodo `find_symbol` responde essas perguntas.
+> **Motivacao:** Desenvolvedores frequentemente precisam saber "onde este simbolo e definido?" e "onde ele e usado?". Similar ao GitHub Code Navigation, os metodos `find_symbol` e `find_symbols` respondem essas perguntas.
 
-### Uso
+### Uso: Simbolo Unico (find_symbol)
 
 ```python
 mapper = SimpleRepoMap(root="/path/to/project")
@@ -569,11 +607,43 @@ if nav.found:
     print(f"Referencias: {len(nav.references)}")
 
     # Renderizar com contexto sintatico
-    print(nav.render())  # Apenas definicoes
+    print(nav.render())                      # Apenas definicoes, com header
     print(nav.render(include_references=True))  # Definicoes + referencias
+    print(nav.render(show_header=False))     # Sem cabecalho de metadados
 ```
 
-### Fluxo de Execucao
+### Uso: Multiplos Simbolos (find_symbols)
+
+```python
+mapper = SimpleRepoMap(root="/path/to/project")
+multi_nav = mapper.find_symbols(
+    symbols=["User", "Product", "OrderService"],  # Lista de simbolos
+    paths=[Path("src")],
+    source_file=Path("src/api/routes.py"),
+)
+
+# Verificar quais simbolos foram encontrados
+print(f"Encontrados: {multi_nav.found_symbols}")      # ["User", "Product"]
+print(f"Nao encontrados: {multi_nav.not_found_symbols}")  # ["OrderService"]
+
+# Acesso individual
+if "User" in multi_nav:
+    user_nav = multi_nav["User"]  # ou multi_nav.get("User")
+    print(f"User definido em {len(user_nav.definitions)} arquivo(s)")
+
+# Renderizacao agregada (cada arquivo aparece uma unica vez)
+print(multi_nav.render())                      # Apenas definicoes
+print(multi_nav.render(include_references=True))  # Inclui referencias
+print(multi_nav.render(show_header=False))     # Sem cabecalho
+```
+
+**Por que usar `find_symbols` em vez de multiplos `find_symbol`?**
+- Parsing dos arquivos feito uma unica vez para todos os simbolos
+- Output agregado: cada arquivo aparece uma unica vez
+- TreeContext compartilha contexto entre simbolos do mesmo arquivo
+- Resultado ~50% menor que renders separados
+
+### Fluxo de Execucao (find_symbol)
 
 ```
 find_symbol("User", [Path("src")], source_file=Path("app.py"))
@@ -599,23 +669,52 @@ find_symbol("User", [Path("src")], source_file=Path("app.py"))
             └──> kind: subkind da primeira definicao (ex: "class")
 ```
 
-### Exemplo de Output (render)
+### Fluxo de Execucao (find_symbols)
 
 ```
-Symbol     : User (class)
-Source file: src/services/user_service.py
-Definitions: 1
-References : 3
+find_symbols(["User", "Product"], [Path("src")], source_file=Path("app.py"))
+    │
+    ├──> _resolve_paths()      # Descobre arquivos (uma vez)
+    │
+    ├──> _read_files()         # Le conteudo (uma vez)
+    │
+    ├──> _get_ranked_tags()    # Extrai tags com boost
+    │       │
+    │       ├──> kinds={"def", "ref"}
+    │       │
+    │       ├──> chat_fnames={"app.py"}  # Boost 20x
+    │       │
+    │       └──> mentioned_idents={"User", "Product"}  # Boost 10x para TODOS
+    │
+    ├──> Agrupar tags por simbolo
+    │
+    └──> Retornar MultiSymbolNavigation
+            ├──> symbols: Dict com SymbolNavigation para cada simbolo
+            ├──> _files: Cache compartilhado de arquivos
+            └──> render() agrega todos os simbolos
+```
 
-ℹ️ Definitions (1)
+### Exemplo de Output (SymbolNavigation.render)
+
+```
+ℹ️ Summary
+========================================
+
+Symbol      : User (class)
+Source file : src/services/user_service.py
+Definitions : 1
+References  : 3
+
+ℹ️ Definitions (1 total, 1 file)
 ----------------------------------------
 src/models/user.py:
 class User:
     def __init__(self, name):
         self.name = name
 
-ℹ️ References (3)
+ℹ️ References (3 total, 2 files)
 ----------------------------------------
+
 src/services/user_service.py:
 from models.user import User
 
@@ -626,15 +725,50 @@ src/main.py:
 user = User("Bob")
 ```
 
-### Diferenca do get_repo_map
+### Exemplo de Output (MultiSymbolNavigation.render)
 
-| Aspecto | `get_repo_map` | `find_symbol` |
-|---------|----------------|---------------|
-| Proposito | Visao geral do repositorio | Navegacao especifica de simbolo |
-| Retorno | String formatada | `SymbolNavigation` estruturado |
-| Foco | Todas as definicoes rankeadas | Um simbolo especifico |
-| Tipos de tags | Apenas `def` | `def` E `ref` |
-| Renderizacao | TreeContext automatico | Metodo `render()` sob demanda |
+```
+ℹ️ Summary
+========================================
+
+Source file : src/api/routes.py
+Symbols found (2/3):
+  • User (class)
+  • Product (class)
+Symbols not found (1/3):
+  • OrderService
+
+ℹ️ Definitions (2 total, 2 files)
+----------------------------------------
+
+src/models/user.py:
+class User:
+    def __init__(self, name):
+        self.name = name
+
+src/models/product.py:
+class Product:
+    def __init__(self, title):
+        self.title = title
+```
+
+### Parametros do render()
+
+| Parametro | Tipo | Default | Descricao |
+|-----------|------|---------|-----------|
+| `include_references` | `bool` | `False` | Se True, inclui secao de referencias |
+| `show_header` | `bool` | `True` | Se True, exibe cabecalho com metadados |
+
+### Diferenca entre os metodos
+
+| Aspecto | `get_repo_map` | `find_symbol` | `find_symbols` |
+|---------|----------------|---------------|----------------|
+| Proposito | Visao geral do repositorio | Navegacao de simbolo unico | Navegacao de multiplos simbolos |
+| Retorno | String formatada | `SymbolNavigation` | `MultiSymbolNavigation` |
+| Foco | Todas as definicoes rankeadas | Um simbolo especifico | Lista de simbolos |
+| Tipos de tags | Apenas `def` | `def` E `ref` | `def` E `ref` |
+| Eficiencia | - | Uma busca | Uma busca para todos |
+| Renderizacao | TreeContext automatico | `render()` sob demanda | `render()` agregado |
 
 ---
 
@@ -750,7 +884,7 @@ mapper.get_repo_map(
 
 **Resultado:** Um "mapa" do repositorio que destaca as partes mais relevantes para o contexto atual, otimizado para caber na janela de contexto de um LLM.
 
-### find_symbol (navegacao de simbolo)
+### find_symbol (navegacao de simbolo unico)
 
 ```
 1. INPUT
@@ -778,3 +912,32 @@ mapper.get_repo_map(
 ```
 
 **Resultado:** Navegacao similar ao GitHub Code Navigation - mostra onde um simbolo e definido e onde e usado.
+
+### find_symbols (navegacao de multiplos simbolos)
+
+```
+1. INPUT
+   └─ Lista de simbolos + paths + source_file (opcional)
+
+2. DISCOVER + READ
+   └─ Mesmas etapas (executadas UMA UNICA VEZ para todos os simbolos)
+
+3. PARSE
+   └─ Extrai tags com kinds={"def", "ref"}
+   └─ Boost 10x para TODOS os simbolos buscados
+
+4. RANK
+   └─ source_file recebe boost 20x (via chat_fnames)
+   └─ Cada simbolo buscado recebe boost 10x
+
+5. GROUP
+   └─ Agrupa tags por nome do simbolo
+   └─ Cria SymbolNavigation para cada simbolo
+
+6. OUTPUT
+   └─ MultiSymbolNavigation com Dict[str, SymbolNavigation]
+   └─ found_symbols / not_found_symbols properties
+   └─ render() agrega todos os simbolos (cada arquivo aparece uma vez)
+```
+
+**Resultado:** Navegacao eficiente para multiplos simbolos - parsing feito uma vez, output agregado sem duplicacao.
