@@ -30,7 +30,7 @@ def main():
         "stackspot_ai"    # this symbol does not exist
     ]
 
-    mapper = SimpleRepoMap(root=str(root_dir), verbose=False)
+    mapper = SimpleRepoMap(root=str(root_dir), verbose=True)
     result = mapper.find_symbols(
         symbols=symbols,
         paths=[root_dir],

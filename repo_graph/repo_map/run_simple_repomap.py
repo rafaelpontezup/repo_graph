@@ -18,7 +18,7 @@ def main():
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     output_file = output_dir / f"simple_repomap_{timestamp}.out"
 
-    mapper = SimpleRepoMap(root=str(samples_dir), max_map_tokens=4000)
+    mapper = SimpleRepoMap(root=str(samples_dir), max_map_tokens=4000, verbose=True)
     repo_map, report = mapper.get_repo_map(
         paths=[samples_dir],
         chat_fnames={"service/order_service.py"},

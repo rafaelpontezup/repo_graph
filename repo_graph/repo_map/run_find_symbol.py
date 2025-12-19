@@ -17,7 +17,7 @@ def main():
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     output_file = output_dir / f"find_symbol_{timestamp}.out"
 
-    mapper = SimpleRepoMap(root=str(root_dir), verbose=False)
+    mapper = SimpleRepoMap(root=str(root_dir), verbose=True)
     result = mapper.find_symbol(
         symbol="total_amount",
         paths=[root_dir],
