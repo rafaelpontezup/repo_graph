@@ -24,7 +24,7 @@ from repo_graph.repo_map.simple_repomap import SimpleRepoMap
 @pytest.fixture
 def crud_app_path():
     """Caminho para samples/crud_app."""
-    return Path(__file__).parent.parent.parent / "repo_graph" / "repo_map" / "samples" / "crud_app"
+    return Path(__file__).parent / "samples" / "crud_app"
 
 
 @pytest.fixture
