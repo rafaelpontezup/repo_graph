@@ -1,0 +1,509 @@
+service/order_service.py:
+(Rank value: 20000.0000)
+
+⋮
+│class OrderService:
+│    def __init__(
+│        self,
+│        order_repository: OrderRepository,
+│        user_service: UserService,
+│        product_service: ProductService,
+⋮
+│    def create_order(self, user_id: int) -> Order:
+⋮
+│    def get_order_by_id(self, order_id: int) -> Order:
+⋮
+│    def list_orders(self, limit: int = 100, offset: int = 0) -> List[Order]:
+⋮
+│    def list_user_orders(self, user_id: int) -> List[Order]:
+⋮
+│    def list_orders_by_status(self, status: OrderStatus) -> List[Order]:
+⋮
+│    def add_item_to_order(
+│        self,
+│        order_id: int,
+│        product_id: int,
+│        quantity: int,
+⋮
+│    def remove_item_from_order(self, order_id: int, product_id: int) -> Order:
+⋮
+│    def confirm_order(self, order_id: int) -> Order:
+⋮
+│    def ship_order(self, order_id: int) -> Order:
+⋮
+│    def deliver_order(self, order_id: int) -> Order:
+⋮
+│    def cancel_order(self, order_id: int) -> Order:
+⋮
+│    def delete_order(self, order_id: int) -> bool:
+⋮
+│    def calculate_order_total(self, order_id: int) -> Decimal:
+⋮
+│    def count_orders(self) -> int:
+⋮
+│    def count_orders_by_status(self, status: OrderStatus) -> int:
+⋮
+
+
+domain/entities.py:
+(Rank value: 10.0000)
+
+⋮
+│class UserStatus(Enum):
+│    ACTIVE = "active"
+│    INACTIVE = "inactive"
+│    BLOCKED = "blocked"
+│
+⋮
+│class OrderStatus(Enum):
+│    PENDING = "pending"
+│    CONFIRMED = "confirmed"
+│    SHIPPED = "shipped"
+│    DELIVERED = "delivered"
+│    CANCELLED = "cancelled"
+│
+⋮
+│@dataclass
+│class User:
+│    id: Optional[int] = None
+│    name: str = ""
+│    email: str = ""
+│    password_hash: str = ""
+│    status: UserStatus = UserStatus.ACTIVE
+│    created_at: datetime = field(default_factory=datetime.now)
+│    updated_at: Optional[datetime] = None
+│
+│    def is_active(self) -> bool:
+⋮
+│    def activate(self) -> None:
+⋮
+│    def deactivate(self) -> None:
+⋮
+│    def block(self) -> None:
+⋮
+│    def validate(self) -> List[str]:
+⋮
+│@dataclass
+│class Product:
+│    id: Optional[int] = None
+│    name: str = ""
+│    description: str = ""
+│    price: Decimal = Decimal("0.00")
+│    stock_quantity: int = 0
+│    is_available: bool = True
+│    created_at: datetime = field(default_factory=datetime.now)
+│    updated_at: Optional[datetime] = None
+│
+│    def is_in_stock(self) -> bool:
+⋮
+│    def decrease_stock(self, quantity: int) -> None:
+⋮
+│    def increase_stock(self, quantity: int) -> None:
+⋮
+│    def validate(self) -> List[str]:
+⋮
+│@dataclass
+│class OrderItem:
+│    id: Optional[int] = None
+│    order_id: Optional[int] = None
+│    product_id: int = 0
+│    product_name: str = ""
+│    quantity: int = 1
+│    unit_price: Decimal = Decimal("0.00")
+│
+│    @property
+│    def total_price(self) -> Decimal:
+⋮
+│@dataclass
+│class Order:
+│    id: Optional[int] = None
+│    user_id: int = 0
+│    status: OrderStatus = OrderStatus.PENDING
+│    items: List[OrderItem] = field(default_factory=list)
+│    created_at: datetime = field(default_factory=datetime.now)
+│    updated_at: Optional[datetime] = None
+│
+│    @property
+│    def total_amount(self) -> Decimal:
+⋮
+│    @property
+│    def total_items(self) -> int:
+⋮
+│    def add_item(self, item: OrderItem) -> None:
+⋮
+│    def remove_item(self, product_id: int) -> None:
+⋮
+│    def confirm(self) -> None:
+⋮
+│    def ship(self) -> None:
+⋮
+│    def deliver(self) -> None:
+⋮
+│    def cancel(self) -> None:
+⋮
+│    def validate(self) -> List[str]:
+⋮
+
+
+api/__init__.py:
+(Rank value: 1.0000)
+
+⋮
+│__all__ = ["UserAPI", "ProductAPI", "OrderAPI"]
+
+
+api/order_api.py:
+(Rank value: 1.0000)
+
+⋮
+│@dataclass
+│class OrderItemResponse:
+│    product_id: int
+│    product_name: str
+│    quantity: int
+│    unit_price: str
+│    total_price: str
+│
+⋮
+│@dataclass
+│class OrderResponse:
+│    id: int
+│    user_id: int
+│    status: str
+│    items: List[OrderItemResponse]
+│    total_amount: str
+│    created_at: str
+│
+│    @classmethod
+│    def from_entity(cls, order: Order) -> "OrderResponse":
+⋮
+│@dataclass
+│class AddItemRequest:
+│    product_id: int
+│    quantity: int
+│
+⋮
+│class OrderAPI:
+│    def __init__(self, order_service: OrderService):
+⋮
+│    def create_order(self, user_id: int) -> OrderResponse:
+⋮
+│    def get_order(self, order_id: int) -> OrderResponse:
+⋮
+│    def list_orders(self, limit: int = 100, offset: int = 0) -> List[OrderResponse]:
+⋮
+│    def list_user_orders(self, user_id: int) -> List[OrderResponse]:
+⋮
+│    def list_pending_orders(self) -> List[OrderResponse]:
+⋮
+│    def add_item(self, order_id: int, request: AddItemRequest) -> OrderResponse:
+⋮
+│    def remove_item(self, order_id: int, product_id: int) -> OrderResponse:
+⋮
+│    def confirm_order(self, order_id: int) -> OrderResponse:
+⋮
+│    def ship_order(self, order_id: int) -> OrderResponse:
+⋮
+│    def deliver_order(self, order_id: int) -> OrderResponse:
+⋮
+│    def cancel_order(self, order_id: int) -> OrderResponse:
+⋮
+│    def delete_order(self, order_id: int) -> bool:
+⋮
+
+
+api/product_api.py:
+(Rank value: 1.0000)
+
+⋮
+│@dataclass
+│class ProductResponse:
+│    id: int
+│    name: str
+│    description: str
+│    price: str
+│    stock_quantity: int
+│    is_available: bool
+│
+│    @classmethod
+│    def from_entity(cls, product: Product) -> "ProductResponse":
+⋮
+│@dataclass
+│class CreateProductRequest:
+│    name: str
+│    description: str
+│    price: Decimal
+│    stock_quantity: int = 0
+│
+⋮
+│@dataclass
+│class UpdateProductRequest:
+│    name: Optional[str] = None
+│    description: Optional[str] = None
+│    price: Optional[Decimal] = None
+│    is_available: Optional[bool] = None
+│
+⋮
+│class ProductAPI:
+│    def __init__(self, product_service: ProductService):
+⋮
+│    def create_product(self, request: CreateProductRequest) -> ProductResponse:
+⋮
+│    def get_product(self, product_id: int) -> ProductResponse:
+⋮
+│    def list_products(self, limit: int = 100, offset: int = 0) -> List[ProductResponse]:
+⋮
+│    def list_available_products(self) -> List[ProductResponse]:
+⋮
+│    def search_products(self, name: str) -> List[ProductResponse]:
+⋮
+│    def update_product(
+│        self, product_id: int, request: UpdateProductRequest
+⋮
+│    def add_stock(self, product_id: int, quantity: int) -> ProductResponse:
+⋮
+│    def delete_product(self, product_id: int) -> bool:
+⋮
+
+
+api/user_api.py:
+(Rank value: 1.0000)
+
+⋮
+│@dataclass
+│class UserResponse:
+│    id: int
+│    name: str
+│    email: str
+│    status: str
+│    created_at: str
+│
+│    @classmethod
+│    def from_entity(cls, user: User) -> "UserResponse":
+⋮
+│@dataclass
+│class CreateUserRequest:
+│    name: str
+│    email: str
+│    password: str
+│
+⋮
+│@dataclass
+│class UpdateUserRequest:
+│    name: Optional[str] = None
+│    email: Optional[str] = None
+│
+⋮
+│class UserAPI:
+│    def __init__(self, user_service: UserService):
+⋮
+│    def create_user(self, request: CreateUserRequest) -> UserResponse:
+⋮
+│    def get_user(self, user_id: int) -> UserResponse:
+⋮
+│    def list_users(self, limit: int = 100, offset: int = 0) -> List[UserResponse]:
+⋮
+│    def update_user(self, user_id: int, request: UpdateUserRequest) -> UserResponse:
+⋮
+│    def delete_user(self, user_id: int) -> bool:
+⋮
+│    def activate_user(self, user_id: int) -> UserResponse:
+⋮
+│    def deactivate_user(self, user_id: int) -> UserResponse:
+⋮
+
+
+domain/__init__.py:
+(Rank value: 1.0000)
+
+⋮
+│__all__ = [
+│    "User",
+│    "Product", 
+│    "Order",
+│    "OrderItem",
+│    "DomainException",
+│    "ValidationError",
+│    "NotFoundError",
+⋮
+
+
+domain/exceptions.py:
+(Rank value: 1.0000)
+
+⋮
+│class DomainException(Exception):
+│    def __init__(self, message: str, code: Optional[str] = None):
+│        super().__init__(message)
+│        self.message = message
+⋮
+│class ValidationError(DomainException):
+│    def __init__(self, errors: List[str]):
+│        message = "; ".join(errors)
+│        super().__init__(message, "VALIDATION_ERROR")
+⋮
+│class NotFoundError(DomainException):
+│    def __init__(self, entity: str, entity_id: int):
+│        message = f"{entity} with id {entity_id} not found"
+│        super().__init__(message, "NOT_FOUND")
+│        self.entity = entity
+⋮
+
+
+repository/__init__.py:
+(Rank value: 1.0000)
+
+⋮
+│__all__ = ["UserRepository", "ProductRepository", "OrderRepository"]
+
+
+repository/base.py:
+(Rank value: 1.0000)
+
+⋮
+│T = TypeVar("T")
+│
+⋮
+│class BaseRepository(ABC, Generic[T]):
+│    def __init__(self, db_path: str = "database.db"):
+⋮
+│    @contextmanager
+│    def get_connection(self):
+⋮
+│    @abstractmethod
+│    def find_by_id(self, entity_id: int) -> Optional[T]:
+⋮
+│    @abstractmethod
+│    def find_all(self, limit: int = 100, offset: int = 0) -> List[T]:
+⋮
+│    @abstractmethod
+│    def save(self, entity: T) -> T:
+⋮
+│    @abstractmethod
+│    def delete(self, entity_id: int) -> bool:
+⋮
+│    @abstractmethod
+│    def count(self) -> int:
+⋮
+
+
+repository/order_repository.py:
+(Rank value: 1.0000)
+
+⋮
+│class OrderRepository(BaseRepository[Order]):
+│    def find_by_id(self, order_id: int) -> Optional[Order]:
+│        with self.get_connection() as conn:
+│            cursor = conn.execute(
+│                """
+│                SELECT id, user_id, status, created_at, updated_at
+│                FROM orders
+│                WHERE id = ?
+│                """,
+│                (order_id,),
+│            )
+⋮
+│    def find_all(self, limit: int = 100, offset: int = 0) -> List[Order]:
+⋮
+│    def find_by_user_id(self, user_id: int) -> List[Order]:
+⋮
+│    def find_by_status(self, status: OrderStatus) -> List[Order]:
+⋮
+│    def save(self, order: Order) -> Order:
+⋮
+│    def delete(self, order_id: int) -> bool:
+⋮
+│    def count(self) -> int:
+⋮
+│    def count_by_status(self, status: OrderStatus) -> int:
+⋮
+│    def _find_items_by_order_id(self, conn, order_id: int) -> List[OrderItem]:
+⋮
+│    def _save_items(self, conn, order: Order) -> None:
+⋮
+│    def _row_to_entity(self, row) -> Order:
+⋮
+
+
+repository/product_repository.py:
+(Rank value: 1.0000)
+
+⋮
+│class ProductRepository(BaseRepository[Product]):
+│    def find_by_id(self, product_id: int) -> Optional[Product]:
+│        with self.get_connection() as conn:
+│            cursor = conn.execute(
+│                """
+│                SELECT id, name, description, price, stock_quantity, 
+│                       is_available, created_at, updated_at
+│                FROM products
+│                WHERE id = ?
+│                """,
+│                (product_id,),
+⋮
+│    def find_all(self, limit: int = 100, offset: int = 0) -> List[Product]:
+⋮
+│    def find_available(self) -> List[Product]:
+⋮
+│    def find_by_name(self, name: str) -> List[Product]:
+⋮
+│    def save(self, product: Product) -> Product:
+⋮
+│    def delete(self, product_id: int) -> bool:
+⋮
+│    def count(self) -> int:
+⋮
+│    def update_stock(self, product_id: int, quantity: int) -> bool:
+⋮
+│    def _row_to_entity(self, row) -> Product:
+⋮
+
+
+repository/user_repository.py:
+(Rank value: 1.0000)
+
+⋮
+│class UserRepository(BaseRepository[User]):
+│    def find_by_id(self, user_id: int) -> Optional[User]:
+│        with self.get_connection() as conn:
+│            cursor = conn.execute(
+│                """
+│                SELECT id, name, email, password_hash, status, created_at, updated_at
+│                FROM users
+│                WHERE id = ?
+│                """,
+│                (user_id,),
+│            )
+⋮
+│    def find_by_email(self, email: str) -> Optional[User]:
+⋮
+│    def find_all(self, limit: int = 100, offset: int = 0) -> List[User]:
+⋮
+│    def find_by_status(self, status: UserStatus) -> List[User]:
+⋮
+│    def save(self, user: User) -> User:
+⋮
+│    def delete(self, user_id: int) -> bool:
+⋮
+│    def count(self) -> int:
+⋮
+│    def exists_by_email(self, email: str) -> bool:
+⋮
+│    def _row_to_entity(self, row) -> User:
+⋮
+
+
+service/__init__.py:
+(Rank value: 1.0000)
+
+⋮
+│__all__ = ["UserService", "ProductService", "OrderService"]
+
+
+service/product_service.py:
+(Rank value: 1.0000)
+
+⋮
+│class ProductService:
+│    def __init__(self, repository: ProductRepository):
+⋮

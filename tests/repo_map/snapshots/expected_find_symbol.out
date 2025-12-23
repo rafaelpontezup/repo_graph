@@ -1,0 +1,83 @@
+ℹ️ Summary
+========================================
+
+Symbol      : total_amount (field)
+Source file : service/order_service.py
+Definitions : 2
+References  : 2
+
+ℹ️ Definitions (2 total, 2 files)
+----------------------------------------
+api/order_api.py:
+⋮
+│
+│
+│@dataclass
+│class OrderResponse:
+│    id: int
+│    user_id: int
+│    status: str
+│    items: List[OrderItemResponse]
+█    total_amount: str
+│    created_at: str
+│
+│    @classmethod
+│    def from_entity(cls, order: Order) -> "OrderResponse":
+│        items = [
+│            OrderItemResponse(
+│                product_id=item.product_id,
+│                product_name=item.product_name,
+⋮
+
+domain/entities.py:
+⋮
+│@dataclass
+│class Order:
+│    id: Optional[int] = None
+│    user_id: int = 0
+│    status: OrderStatus = OrderStatus.PENDING
+│    items: List[OrderItem] = field(default_factory=list)
+│    created_at: datetime = field(default_factory=datetime.now)
+│    updated_at: Optional[datetime] = None
+│
+│    @property
+█    def total_amount(self) -> Decimal:
+│        return sum(item.total_price for item in self.items)
+│
+│    @property
+│    def total_items(self) -> int:
+│        return sum(item.quantity for item in self.items)
+│
+│    def add_item(self, item: OrderItem) -> None:
+│        item.order_id = self.id
+⋮
+
+ℹ️ References (2 total, 2 files)
+----------------------------------------
+
+service/order_service.py:
+⋮
+│        return self.order_repository.delete(order_id)
+│
+│    def calculate_order_total(self, order_id: int) -> Decimal:
+│        order = self.get_order_by_id(order_id)
+█        return order.total_amount
+│
+│    def count_orders(self) -> int:
+│        return self.order_repository.count()
+│
+⋮
+
+
+api/order_api.py:
+⋮
+│            id=order.id,
+│            user_id=order.user_id,
+│            status=order.status.value,
+│            items=items,
+█            total_amount=str(order.total_amount),
+│            created_at=order.created_at.isoformat(),
+│        )
+│
+│
+⋮

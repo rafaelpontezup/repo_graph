@@ -18,6 +18,7 @@ build/
 .coverage
 htmlcov/
 .tox/
+tests/repo_map/snapshots/actual_*.out
 
 # IDEs
 .idea/

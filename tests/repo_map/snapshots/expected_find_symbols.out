@@ -1,0 +1,214 @@
+ℹ️ Summary
+========================================
+
+Source file : service/order_service.py
+Symbols found (4/5):
+  • User (class)
+  • Product (class)
+  • Order (class)
+  • total_amount (field)
+Symbols not found (1/5):
+  • stackspot_ai
+
+ℹ️ Definitions (5 total, 2 files)
+----------------------------------------
+
+api/order_api.py:
+⋮
+│
+│
+│@dataclass
+│class OrderResponse:
+│    id: int
+│    user_id: int
+│    status: str
+│    items: List[OrderItemResponse]
+█    total_amount: str
+│    created_at: str
+│
+│    @classmethod
+│    def from_entity(cls, order: Order) -> "OrderResponse":
+│        items = [
+│            OrderItemResponse(
+│                product_id=item.product_id,
+│                product_name=item.product_name,
+⋮
+
+
+domain/entities.py:
+⋮
+│    PENDING = "pending"
+│    CONFIRMED = "confirmed"
+│    SHIPPED = "shipped"
+│    DELIVERED = "delivered"
+│    CANCELLED = "cancelled"
+│
+│
+│@dataclass
+█class User:
+│    id: Optional[int] = None
+│    name: str = ""
+│    email: str = ""
+│    password_hash: str = ""
+│    status: UserStatus = UserStatus.ACTIVE
+│    created_at: datetime = field(default_factory=datetime.now)
+│    updated_at: Optional[datetime] = None
+│
+⋮
+│        if not self.email or "@" not in self.email:
+│            errors.append("Invalid email format")
+│        if not self.password_hash:
+│            errors.append("Password is required")
+│        return errors
+│
+│
+│@dataclass
+█class Product:
+│    id: Optional[int] = None
+│    name: str = ""
+│    description: str = ""
+│    price: Decimal = Decimal("0.00")
+│    stock_quantity: int = 0
+│    is_available: bool = True
+│    created_at: datetime = field(default_factory=datetime.now)
+│    updated_at: Optional[datetime] = None
+│
+⋮
+│    unit_price: Decimal = Decimal("0.00")
+│
+│    @property
+│    def total_price(self) -> Decimal:
+│        return self.unit_price * self.quantity
+│
+│
+│@dataclass
+█class Order:
+│    id: Optional[int] = None
+│    user_id: int = 0
+│    status: OrderStatus = OrderStatus.PENDING
+│    items: List[OrderItem] = field(default_factory=list)
+│    created_at: datetime = field(default_factory=datetime.now)
+│    updated_at: Optional[datetime] = None
+│
+│    @property
+█    def total_amount(self) -> Decimal:
+│        return sum(item.total_price for item in self.items)
+│
+│    @property
+│    def total_items(self) -> int:
+│        return sum(item.quantity for item in self.items)
+│
+│    def add_item(self, item: OrderItem) -> None:
+│        item.order_id = self.id
+⋮
+
+
+ℹ️ References (8 total, 7 files)
+----------------------------------------
+
+api/order_api.py:
+⋮
+│            id=order.id,
+│            user_id=order.user_id,
+│            status=order.status.value,
+│            items=items,
+█            total_amount=str(order.total_amount),
+│            created_at=order.created_at.isoformat(),
+│        )
+│
+│
+⋮
+
+
+repository/order_repository.py:
+⋮
+│            )
+│            item.id = cursor.lastrowid
+│
+│    def _row_to_entity(self, row) -> Order:
+█        return Order(
+│            id=row["id"],
+│            user_id=row["user_id"],
+│            status=OrderStatus(row["status"]),
+│            items=[],
+⋮
+
+
+repository/product_repository.py:
+⋮
+│            )
+│            return cursor.rowcount > 0
+│
+│    def _row_to_entity(self, row) -> Product:
+█        return Product(
+│            id=row["id"],
+│            name=row["name"],
+│            description=row["description"],
+│            price=Decimal(row["price"]),
+⋮
+
+
+repository/user_repository.py:
+⋮
+│            )
+│            return cursor.fetchone() is not None
+│
+│    def _row_to_entity(self, row) -> User:
+█        return User(
+│            id=row["id"],
+│            name=row["name"],
+│            email=row["email"],
+│            password_hash=row["password_hash"],
+⋮
+
+
+service/order_service.py:
+⋮
+│
+│    def create_order(self, user_id: int) -> Order:
+│        self.user_service.get_user_by_id(user_id)
+│
+█        order = Order(user_id=user_id, status=OrderStatus.PENDING)
+│        return self.order_repository.save(order)
+│
+│    def get_order_by_id(self, order_id: int) -> Order:
+│        order = self.order_repository.find_by_id(order_id)
+⋮
+│        return self.order_repository.delete(order_id)
+│
+│    def calculate_order_total(self, order_id: int) -> Decimal:
+│        order = self.get_order_by_id(order_id)
+█        return order.total_amount
+│
+│    def count_orders(self) -> int:
+│        return self.order_repository.count()
+│
+⋮
+
+
+service/product_service.py:
+⋮
+│        description: str,
+│        price: Decimal,
+│        stock_quantity: int = 0,
+│    ) -> Product:
+█        product = Product(
+│            name=name,
+│            description=description,
+│            price=price,
+│            stock_quantity=stock_quantity,
+⋮
+
+
+service/user_service.py:
+⋮
+│        if self.repository.exists_by_email(email):
+│            raise ValidationError(["Email already registered"])
+│
+│        password_hash = self._hash_password(password)
+█        user = User(
+│            name=name,
+│            email=email,
+│            password_hash=password_hash,
+│            status=UserStatus.ACTIVE,
+⋮
